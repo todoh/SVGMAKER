@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Dibujos SVG</title>
+    <!-- CSS Personalizado -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Contenedor principal -->
+    <div class="container">
+        <div class="main-content">
+
+            <!-- Encabezado -->
+            <header>
+                <h1>Generador de Dibujos SVG</h1>
+                <p>Crea y mejora arte vectorial con IA. Tus creaciones se guardan localmente.</p>
+            </header>
+
+            <!-- Layout de dos columnas -->
+            <div class="layout-container">
+
+                <!-- Columna de Controles (Izquierda) -->
+                <div class="controls-column">
+                    
+                    <!-- Sección de API Key -->
+                    <div class="card">
+                        <label for="apiKeyInput" class="label">API Key (Se guarda localmente)</label>
+                        <input type="password" id="apiKeyInput" class="input-field" placeholder="Ingresa tu API Key de Gemini">
+                    </div>
+
+                    <!-- Sección de Modelo -->
+                    <div class="card">
+                        <label for="modelSelect" class="label">Modelo de IA</label>
+                        <select id="modelSelect" class="select-field">
+                            <option value="gemini-2.5-flash-lite-preview-09-2025">2.5 Flash Lite</option>
+                            <option value="gemini-2.5-flash-preview-09-2025" selected>2.5 Flash</option>
+                            <option value="gemini-2.5-pro">2.5 Pro</option>
+                        </select>
+                    </div>
+
+                    <!-- Sección de Generación -->
+                    <div class="card">
+                        <h2 class="card-title">1. Generar Nuevo Dibujo</h2>
+                        <label for="promptInput" class="label">Prompt Principal</label>
+                        <textarea id="promptInput" rows="3" class="textarea-field" placeholder="Ej: Un astronauta en la luna, estilo minimalista"></textarea>
+                        <button id="generateButton" class="btn btn-primary">
+                            Añadir a la cola de generación
+                        </button>
+                    </div>
+
+                    <!-- Sección de Mejora (movida al modal) -->
+
+                </div>
+
+                <!-- Columna de Vista Previa (Derecha) -->
+                <div class="preview-column">
+                    <h2 class="card-title">Vista Previa (Selecciona un item de la galería)</h2>
+                    
+                    <!-- Contenedor de la imagen de vista previa -->
+                    <div id="previewArea">
+                        <p>Aquí aparecerá tu dibujo...</p>
+                    </div>
+
+                    <!-- Mensaje de estado -->
+                    <div id="statusMessage" class="status-message"></div>
+
+                    <!-- Sección de Acciones (inicialmente oculta) -->
+                    <div id="actionsSection" class="actions-container hidden">
+                        <button id="copySvgButton" class="btn btn-dark">
+                            Copiar SVG
+                        </button>
+                    </div>
+
+                    <!-- Contenedor del código SVG (opcional, para depurar) -->
+                    <div id="svgCodeWrapper" class="hidden">
+                        <label class="label">Código SVG (solo lectura)</label>
+                        <pre id="svgCodeContainer"><code id="svgCode">...</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Nueva Sección de Galería -->
+            <div id="gallerySection" class="card gallery-container">
+                <div class="gallery-header">
+                    <h2 class="card-title">Mi Galería Persistente</h2>
+                    <div>
+                        <input type="file" id="uploadGalleryInput" accept=".json" class="hidden">
+                        <label for="uploadGalleryInput" id="uploadGalleryLabel" class="btn btn-success">
+                            Cargar Galería (JSON)
+                        </label>
+                        <button id="downloadGalleryButton" class="btn btn-purple">
+                            Descargar Galería (JSON)
+                        </button>
+                    </div>
+                </div>
+                <div id="galleryGrid" class="gallery-grid">
+                    <!-- Los items de la galería se insertarán aquí -->
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Loader Overlay (Global) -->
+    <div id="loader" class="loader-overlay hidden">
+        <div class="loader-content">
+            <div class="spinner"></div>
+            <p>Procesando mejora...</p>
+        </div>
+    </div>
+
+    <!-- Modal de Mejora -->
+    <div id="improveModal" class="modal-overlay hidden">
+        <div class="modal-content card">
+            <h2 class="card-title">Editar / Mejorar SVG</h2>
+            
+            <label for="modalItemName" class="label">Nombre del Dibujo:</label>
+            <input type="text" id="modalItemName" class="input-field">
+
+            <label for="modalImprovePrompt" class="label">Instrucción de Mejora (Opcional):</label>
+            <textarea id="modalImprovePrompt" rows="3" class="textarea-field" placeholder="Ej: Añade más estrellas y un alienígena"></textarea>
+            
+            <div class="modal-actions">
+                <button id="modalDuplicate" class="btn btn-dark">Duplicar</button>
+                <button id="modalDelete" class="btn btn-danger">Eliminar</button>
+                <button id="modalImproveCancel" class="btn btn-secondary">Cancelar</button>
+                <button id="modalRenameSave" class="btn btn-dark">Solo Guardar Nombre</button>
+                <button id="modalImproveConfirm" class="btn btn-primary">Guardar y Mejorar</button>
+            </div>
+
+            <!-- Zona de confirmación de borrado -->
+            <div id="modalDeleteConfirm" class="modal-delete-confirm hidden">
+                <p>¿Estás seguro? Esta acción es irreversible.</p>
+                <button id="modalDeleteConfirmBtn" class="btn btn-danger">Sí, Eliminar</button>
+                <button id="modalDeleteCancelBtn" class="btn btn-secondary">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script principal (debe ser módulo) -->
+    <script src="main.js" type="module"></script>
+</body>
+</html>
