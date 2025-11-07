@@ -225,7 +225,25 @@ header p {
     object-fit: contain;
     border-radius: 0.5rem; /* rounded-lg */
 }
-
+#previewArea svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 0.5rem; /* rounded-lg */
+}
+.selection-rectangle {
+    fill: rgba(59, 130, 246, 0.2); /* Relleno azul semitransparente */
+    stroke: #3b82f6; /* Borde azul */
+    stroke-width: 1px;
+    stroke-dasharray: 3 3; /* Línea discontinua */
+}
+/* NUEVA CLASE: Para el elemento SVG seleccionado */
+.shape-selected {
+    stroke: #3b82f6 !important; /* Un azul brillante */
+    stroke-width: 5 !important; /* Un borde más grueso */
+    stroke-dasharray: 10 5 !important; /* Línea discontinua */
+    stroke-opacity: 0.9 !important;
+}
 .status-message {
     margin-top: 0.5rem; /* mt-2 */
     font-size: 0.875rem; /* text-sm */
@@ -372,6 +390,7 @@ header p {
     font-size: 0.875rem;
     font-weight: 500;
     padding: 0.5rem;
+    z-index: 10; /* <-- AÑADIDO: Asegura que esté sobre los botones de hover */
 }
 .gallery-item-status .spinner-small {
     width: 1.5rem;
@@ -448,6 +467,67 @@ header p {
 .hidden {
     display: none;
 }
+
+/* --- NUEVOS ESTILOS (Añadidos al final) --- */
+
+/* Estilo para el ítem de galería seleccionado */
+.gallery-item.selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px #2563eb; /* Efecto de anillo */
+}
+/* Evita el "salto" al pasar el ratón si ya está seleccionado */
+.gallery-item.selected:hover {
+    transform: none;
+}
+
+/* Contenedor de botones de acción en la galería */
+.gallery-item-actions {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0; /* Oculto por defecto */
+    transition: opacity 0.2s ease-in-out;
+    z-index: 5; /* Debajo del status overlay pero sobre la imagen */
+}
+
+/* Mostrar botones al pasar el ratón */
+.gallery-item:hover .gallery-item-actions {
+    opacity: 1;
+}
+
+/* Estilo de los botones (editar/eliminar) */
+.gallery-item-btn {
+    width: 1.75rem; /* 28px */
+    height: 1.75rem; /* 28px */
+    border-radius: 50%; /* Circular */
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem; /* 14px */
+    font-weight: bold;
+    color: white;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    transition: background-color 0.2s;
+}
+
+.gallery-item-btn.edit {
+    background-color: #2563eb; /* Azul */
+}
+.gallery-item-btn.edit:hover {
+    background-color: #1d4ed8;
+}
+
+.gallery-item-btn.delete {
+    background-color: #dc2626; /* Rojo */
+}
+.gallery-item-btn.delete:hover {
+    background-color: #b91c1c;
+}
+
 
 /* --- Responsividad --- */
 @media (min-width: 768px) { /* md: */

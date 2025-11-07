@@ -68,23 +68,30 @@
                     <div id="statusMessage" class="status-message"></div>
 
                     <!-- Sección de Acciones (inicialmente oculta) -->
+                    <!-- ESTA ES LA SECCIÓN CORREGIDA (HE ELIMINADO LA DUPLICADA) -->
                     <div id="actionsSection" class="actions-container hidden">
                         <button id="copySvgButton" class="btn btn-dark">
                             Copiar SVG
                         </button>
+                        <!-- NUEVO BOTÓN -->
+                        <button id="deleteShapeButton" class="btn btn-danger">
+                            Eliminar Forma
+                        </button>
                     </div>
-<div id="manualControls" class="card hidden">
-    <h3 class="card-title" style="font-size: 1rem; margin-bottom: 0.5rem;">Controles Manuales</h3>
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;">
-        <button class="btn btn-secondary" data-action="zoom-in">Zoom +</button>
-        <button class="btn btn-secondary" data-action="pan-up">Arriba</button>
-        <button class="btn btn-secondary" data-action="zoom-out">Zoom -</button>
-        <button class="btn btn-secondary" data-action="pan-left">Izquierda</button>
-        <button class="btn btn-secondary" data-action="reset">Reset</button>
-        <button class="btn btn-secondary" data-action="pan-right">Derecha</button>
-        <span></span> <button class="btn btn-secondary" data-action="pan-down">Abajo</button>
-        <span></span> </div>
-</div>
+                    
+                    <div id="manualControls" class="card hidden">
+                        <h3 class="card-title" style="font-size: 1rem; margin-bottom: 0.5rem;">Controles Manuales</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;">
+                            <button class="btn btn-secondary" data-action="zoom-in">Zoom +</button>
+                            <button class="btn btn-secondary" data-action="pan-up">Arriba</button>
+                            <button class="btn btn-secondary" data-action="zoom-out">Zoom -</button>
+                            <button class="btn btn-secondary" data-action="pan-left">Izquierda</button>
+                            <button class="btn btn-secondary" data-action="reset">Reset</button>
+                            <button class="btn btn-secondary" data-action="pan-right">Derecha</button>
+                            <span></span> <button class="btn btn-secondary" data-action="pan-down">Abajo</button>
+                            <span></span> </div>
+                    </div>
+                    
                     <!-- Contenedor del código SVG (opcional, para depurar) -->
                     <div id="svgCodeWrapper" class="hidden">
                         <label class="label">Código SVG (solo lectura)</label>
@@ -152,6 +159,7 @@
     </div>
 
     <!-- Script principal (debe ser módulo) -->
+    <!-- ¡IMPORTANTE! Asegúrate de que svginteract.js existe -->
     <script src="main.js" type="module"></script>
 </body>
 </html>

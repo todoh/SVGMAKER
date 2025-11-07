@@ -7,14 +7,18 @@
 // =================================================================
 
 import { initApiKeys } from './apisistema.js';
-import { svgToPngDataURL } from './svgeditar.js'; // <-- CAMBIO: Importamos el conversor de PNG
+import { svgToPngDataURL } from './svgeditar.js';
 import { generarImagenDesdePrompt } from './svggeneracion.js';
 import { mejorarImagenDesdeSVG } from './svgmejora.js';
 import { manipulateViewBox } from './svgmanual.js';
+// NUEVA IMPORTACIÓN
+import { makeSvgInteractive, deleteSelectedElement, clearSelection, deactivateSvgInteraction } from './svginteract.js';
+
 // --- Variables de Estado ---
 let svgGallery = [];
 let currentSelectedId = null;
-const GALLERY_STORAGE_KEY = 'svgGallery';
+// Ya no se usará GALLERY_STORAGE_KEY, pero la dejamos comentada por si acaso.
+// const GALLERY_STORAGE_KEY = 'svgGallery'; 
 
 // --- Referencias a elementos DOM ---
 let apiKeyInput, promptInput, generateButton,
@@ -25,7 +29,8 @@ let apiKeyInput, promptInput, generateButton,
     modalDuplicate, modalDelete,
     modalDeleteConfirm, modalDeleteConfirmBtn, modalDeleteCancelBtn,
     svgCode, svgCodeContainer, svgCodeWrapper, actionsSection,
-    manualControls; // <-- MEJORA: Declarado aquí
+    manualControls, 
+    deleteShapeButton; // <-- NUEVA REFERENCIA
 
 
 // --- Funciones de la UI ---
@@ -60,17 +65,57 @@ function showStatus(message, isError = false) {
 
 /**
  * Muestra el resultado seleccionado en la UI principal.
- * @param {string} pngDataUrl - La Data URL de la imagen PNG.
  * @param {string} svgContent - El código XML del SVG.
  * @param {string} prompt - El prompt que generó la imagen.
  */
-function showResultInPreview(pngDataUrl, svgContent, prompt) {
-    previewArea.innerHTML = `<img src="${pngDataUrl}" alt="Vista previa de ${prompt}">`;
-    svgCode.textContent = svgContent;
+function showResultInPreview(svgContent, prompt) {
+    // Ya no usamos pngDataUrl, ahora inyectamos el SVG directamente
     
+    // Paso 1: Limpiar el área de vista previa
+    previewArea.innerHTML = ""; 
+    
+    // Paso 2: Parsear el string SVG a un elemento DOM
+    let svgElement;
+    try {
+        const doc = new DOMParser().parseFromString(svgContent, "image/svg+xml");
+        svgElement = doc.documentElement;
+
+        // Error común: el parser puede devolver un documento de error
+        if (svgElement.tagName === 'parsererror' || !svgElement) {
+            throw new Error('Error al parsear el SVG.');
+        }
+    } catch (e) {
+        console.error("Error parseando SVG:", e);
+        showStatus("Error: El SVG está corrupto y no se puede editar.", true);
+        previewArea.innerHTML = "<p>Error: SVG corrupto.</p>";
+        // Limpiamos el resto de la UI
+        svgCode.textContent = svgContent; // Mostramos el SVG roto
+        actionsSection.classList.remove('hidden'); // Mostramos acciones (copiar)
+        svgCodeWrapper.classList.remove('hidden');
+        manualControls.classList.add('hidden'); // Ocultamos controles
+        return;
+    }
+
+    // Paso 3: Añadir el elemento SVG al DOM
+    previewArea.appendChild(svgElement);
+
+    // Paso 4: Hacerlo interactivo
+    makeSvgInteractive(svgElement, (updatedSvgString) => {
+        // Este callback se activa CADA VEZ que el usuario
+        // mueve o elimina una forma.
+        
+        // 1. Guardar el nuevo SVG en la galería (en memoria)
+        updateGalleryItem(currentSelectedId, { svgContent: updatedSvgString });
+        
+        // 2. Actualizar el cuadro de texto del código
+        svgCode.textContent = updatedSvgString;
+    });
+
+    // Paso 5: Mostrar el resto de la UI
+    svgCode.textContent = svgContent;
     actionsSection.classList.remove('hidden');
     svgCodeWrapper.classList.remove('hidden');
-    manualControls.classList.remove('hidden'); // <-- MEJORA: Mostrar controles
+    manualControls.classList.remove('hidden');
 }
 
 /**
@@ -81,44 +126,56 @@ function clearPreview() {
     svgCode.textContent = "...";
     actionsSection.classList.add('hidden');
     svgCodeWrapper.classList.add('hidden');
-    manualControls.classList.add('hidden'); // <-- MEJORA: Ocultar controles
+    manualControls.classList.add('hidden');
+    
+    deactivateSvgInteraction(); // <-- NUEVO: Desactiva listeners
+    
     currentSelectedId = null;
+    
+    // Desmarcar todos los items de la galería
+    document.querySelectorAll('.gallery-item.selected').forEach(el => el.classList.remove('selected'));
 }
 
 // --- Funciones de Galería ---
 
 /**
  * Carga la galería desde localStorage al iniciar.
+ * CAMBIO: Ya no carga desde localStorage.
  */
 function initGallery() {
-    const savedGallery = localStorage.getItem(GALLERY_STORAGE_KEY);
-    if (savedGallery) {
-        // Los items guardados ya no tienen pngDataUrl, así que se cargan ligeros
-        svgGallery = JSON.parse(savedGallery); 
-        svgGallery = svgGallery.filter(item => item.status === 'completed' || item.status === 'error');
-    }
+    // Se ha eliminado la carga desde localStorage para que la galería no sea persistente.
+    // const savedGallery = localStorage.getItem(GALLERY_STORAGE_KEY);
+    // if (savedGallery) {
+    //     // Los items guardados ya no tienen pngDataUrl, así que se cargan ligeros
+    //     svgGallery = JSON.parse(savedGallery); 
+    //     svgGallery = svgGallery.filter(item => item.status === 'completed' || item.status === 'error');
+    // }
+    
+    // svgGallery se inicializa como [] globalmente.
     renderGallery();
 }
 
 /**
  * Guarda la galería actual en localStorage (sin los pngDataUrl).
+ * CAMBIO: Ya no guarda en localStorage.
  */
 function saveGallery() {
-    // <-- CAMBIO: Creamos una galería "limpia" solo para guardarla
-    const galleryToSave = svgGallery.map(item => {
-        // Copiamos el item, pero eliminamos el 'pngDataUrl'
-        const { pngDataUrl, ...itemToSave } = item;
-        return itemToSave;
-    });
+    // Se ha eliminado el guardado en localStorage para que la galería no sea persistente.
+    
+    // const galleryToSave = svgGallery.map(item => {
+    //     // Copiamos el item, pero eliminamos el 'pngDataUrl'
+    //     const { pngDataUrl, ...itemToSave } = item;
+    //     return itemToSave;
+    // });
 
-    try {
-        // Guardamos la versión ligera
-        localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(galleryToSave));
-    } catch (error) {
-        // Capturamos el error aquí si vuelve a pasar
-        console.error("Error al guardar en localStorage (¿quizás aún está lleno?):", error);
-        showStatus("Error al guardar la galería. El almacenamiento podría estar lleno.", true);
-    }
+    // try {
+    //     // Guardamos la versión ligera
+    //     localStorage.setItem(GALLERY_STORAGE_KEY, JSON.stringify(galleryToSave));
+    // } catch (error) {
+    //     // Capturamos el error aquí si vuelve a pasar
+    //     console.error("Error al guardar en localStorage (¿quizás aún está lleno?):", error);
+    //     showStatus("Error al guardar la galería. El almacenamiento podría estar lleno.", true);
+    // }
 }
 
 /**
@@ -138,6 +195,11 @@ function renderGallery() {
         itemEl.className = 'gallery-item';
         itemEl.dataset.id = item.id;
         itemEl.tabIndex = 0;
+        
+        // Marcar si está seleccionado
+        if (item.id === currentSelectedId) {
+            itemEl.classList.add('selected');
+        }
 
         if (item.status === 'pending') {
             itemEl.classList.add('status-pending');
@@ -162,13 +224,34 @@ function renderGallery() {
             // <-- CAMBIO: Ya no usamos item.pngDataUrl.
             // Creamos un Data URL para el *SVG* sobre la marcha.
             const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(item.svgContent);
+            
+            // <-- CAMBIO: Añadidos botones de acción -->
             itemEl.innerHTML = `
+                <div class="gallery-item-actions">
+                    <button class="gallery-item-btn edit" data-action="edit" title="Editar">✏️</button>
+                    <button class="gallery-item-btn delete" data-action="delete" title="Eliminar">❌</button>
+                </div>
                 <img src="${svgDataUrl}" alt="${item.name}">
                 <p class="gallery-item-name">${item.name}</p>
             `;
         }
 
-        itemEl.addEventListener('click', () => handleGalleryItemClick(item));
+        // <-- CAMBIO: Event listener unificado -->
+        itemEl.addEventListener('click', (e) => {
+            const action = e.target.dataset.action;
+            
+            if (action === 'edit') {
+                // Click en botón "Editar"
+                handleGalleryEditClick(item);
+            } else if (action === 'delete') {
+                // Click en botón "Eliminar"
+                handleGalleryDeleteClick(item);
+            } else if (item.status === 'completed') {
+                // Click en el ítem (imagen, nombre, etc.)
+                handleGalleryItemClick(item);
+            }
+            // Si el estado no es 'completed' o se hace clic en el fondo de un ítem pendiente/error, no hacer nada.
+        });
         
         galleryGrid.appendChild(itemEl);
     });
@@ -181,7 +264,7 @@ function renderGallery() {
 function addToGallery(item) {
     svgGallery.push(item);
     renderGallery();
-    saveGallery();
+    saveGallery(); // Esta función ahora no hace nada, pero la dejamos por si acaso.
 }
 
 /**
@@ -194,7 +277,7 @@ function updateGalleryItem(id, updates) {
     if (itemIndex > -1) {
         svgGallery[itemIndex] = { ...svgGallery[itemIndex], ...updates };
         renderGallery();
-        saveGallery();
+        saveGallery(); // Esta función ahora no hace nada.
     }
 }
 
@@ -236,9 +319,10 @@ async function handleGenerate() {
             const result = await generarImagenDesdePrompt(prompt, selectedModel);
             updateGalleryItem(newItem.id, {
                 svgContent: result.svgContent,
-                pngDataUrl: result.imagen, // <-- CAMBIO: Guardamos el PNG en memoria...
+                // Ya no guardamos la 'imagen' (png) en el estado,
+                // solo el svgContent es la fuente de verdad.
                 status: 'completed'
-            }); // ...pero saveGallery() lo filtrará
+            });
         } catch (error) {
             console.error("Error en handleGenerate (background):", error);
             // Mostramos el error del sistema de rotación
@@ -249,33 +333,87 @@ async function handleGenerate() {
 }
 
 /**
- * Maneja el click en un item de la galería (AHORA ASÍNCRONO).
+ * Maneja el click en un item de la galería (AHORA SÍNCRONO).
+ * ESTA FUNCIÓN AHORA SOLO CARGA LA VISTA PREVIA.
  * @param {object} item - El item de la galería clickeado.
  */
-async function handleGalleryItemClick(item) { // <-- CAMBIO: Convertida a async
+function handleGalleryItemClick(item) {
     if (item.status !== 'completed') return;
+
+    // No hacer nada si el ítem ya está seleccionado
+    if (currentSelectedId === item.id) {
+        return;
+    }
 
     currentSelectedId = item.id;
 
     try {
-        // <-- CAMBIO: Generamos el PNG al momento
-        const pngDataUrl = await svgToPngDataURL(item.svgContent);
-        
-        // El pngDataUrl se usa aquí, pero no se guarda en el item
-        showResultInPreview(pngDataUrl, item.svgContent, item.prompt);
+        // Invocamos directamente a showResultInPreview con el string SVG.
+        showResultInPreview(item.svgContent, item.prompt);
 
-        modalItemName.value = item.name;
-        modalImprovePrompt.value = "";
-        improveModal.classList.remove('hidden');
-        
-        modalDeleteConfirm.classList.add('hidden');
-        modalImproveConfirm.parentElement.style.display = 'flex';
+        // <-- CAMBIO: Resaltar el ítem seleccionado en la galería -->
+        document.querySelectorAll('.gallery-item.selected').forEach(el => el.classList.remove('selected'));
+        // Usamos querySelector en galleryGrid para asegurar que solo buscamos dentro de la galería
+        const itemEl = galleryGrid.querySelector(`.gallery-item[data-id="${item.id}"]`);
+        if (itemEl) {
+            itemEl.classList.add('selected');
+        }
 
     } catch (error) {
-        console.error("Error al generar PNG para la vista previa:", error);
+        console.error("Error al mostrar la vista previa interactiva:", error);
         showStatus("Error al mostrar la vista previa.", true);
     }
 }
+
+/**
+ * <-- NUEVA FUNCIÓN -->
+ * Maneja el click en el botón 'Editar' de un item de la galería.
+ * @param {object} item - El item de la galería clickeado.
+ */
+function handleGalleryEditClick(item) {
+    if (item.status !== 'completed') return;
+
+    // 1. Carga el item en la vista previa (si no está ya cargado)
+    // Esto asegura que el modal y la vista previa estén sincronizados.
+    if (currentSelectedId !== item.id) {
+        handleGalleryItemClick(item);
+    }
+    
+    // 2. Pre-popula y muestra el modal (comportamiento anterior de handleGalleryItemClick)
+    modalItemName.value = item.name;
+    modalImprovePrompt.value = "";
+    improveModal.classList.remove('hidden');
+    
+    // 3. Resetea el estado del modal (confirmación de borrado)
+    modalDeleteConfirm.classList.add('hidden');
+    modalImproveConfirm.parentElement.style.display = 'flex';
+}
+
+/**
+ * <-- NUEVA FUNCIÓN -->
+ * Maneja el click en el botón 'Eliminar' de un item de la galería.
+ * @param {object} item - El item de la galería clickeado.
+ */
+function handleGalleryDeleteClick(item) {
+    if (!item || !item.id) return;
+
+    // Usamos un confirm simple para el borrado rápido desde la galería
+    if (confirm(`¿Estás seguro de que quieres eliminar "${item.name}"? Esta acción es irreversible.`)) {
+        
+        // Si el item a eliminar es el que está seleccionado, límpialo
+        if (currentSelectedId === item.id) {
+            clearPreview();
+        }
+
+        // Elimina de la galería
+        svgGallery = svgGallery.filter(i => i.id !== item.id);
+        saveGallery(); // No hace nada, pero mantiene la estructura.
+        renderGallery();
+
+        showStatus("Item eliminado permanentemente.", false);
+    }
+}
+
 
 /**
  * Maneja el click en el botón de "Mejorar" dentro del modal.
@@ -323,7 +461,6 @@ async function handleImprove() {
             
             updateGalleryItem(itemIdToImprove, {
                 svgContent: result.svgContent,
-                pngDataUrl: result.imagen, // Se guarda en memoria...
                 status: 'completed'
             }); // ...y se filtra al guardar
 
@@ -355,7 +492,7 @@ function handleDuplicate() {
         ...originalItem,
         id: Date.now().toString(),
         name: originalItem.name + " (Copia)"
-        // pngDataUrl se copia, pero se filtrará al guardar
+        // pngDataUrl ya no existe, así que no se copia
     };
 
     addToGallery(newItem);
@@ -381,12 +518,13 @@ function hideDeleteConfirmation() {
 
 /**
  * Elimina permanentemente el item seleccionado.
+ * (Esta función ahora es llamada solo por el botón "Eliminar" DENTRO DEL MODAL)
  */
 function handleDelete() {
     if (!currentSelectedId) return;
 
     svgGallery = svgGallery.filter(i => i.id !== currentSelectedId);
-    saveGallery();
+    saveGallery(); // No hace nada, pero mantiene la estructura.
     renderGallery();
 
     showStatus("Item eliminado permanentemente.", false);
@@ -439,7 +577,7 @@ function handleGalleryUpload(event) {
             });
 
             if (addedCount > 0) {
-                saveGallery();
+                saveGallery(); // No hace nada.
                 renderGallery();
                 showStatus(`Se añadieron ${addedCount} nuevos items a la galería.`, false);
             } else {
@@ -459,8 +597,7 @@ function handleGalleryUpload(event) {
         event.target.value = null;
     };
 
-    // --- LA CORRECCIÓN ESTÁ AQUÍ ---
-    reader.readAsText(file); // Era 'readText' y debe ser 'readAsText'
+    reader.readAsText(file);
 }
 
 
@@ -549,6 +686,23 @@ function handleDownloadGallery() {
     showStatus("Galería JSON descargada.", false);
 }
 
+// --- NUEVA FUNCIÓN ---
+/**
+ * Maneja el click en el botón "Eliminar Forma".
+ */
+function handleDeleteShape() {
+    if (!currentSelectedId) return;
+    
+    if (deleteSelectedElement()) {
+        showStatus("Forma eliminada.", false);
+        // El guardado se gestiona automáticamente por el callback
+        // dentro de deleteSelectedElement -> makeSvgInteractive
+    } else {
+        showStatus("No hay ninguna forma seleccionada.", true);
+    }
+}
+
+
 // --- Inicialización ---
 
 /**
@@ -571,7 +725,8 @@ function main() {
     svgCodeContainer = document.getElementById('svgCodeContainer');
     svgCodeWrapper = document.getElementById('svgCodeWrapper');
     galleryGrid = document.getElementById('galleryGrid');
-    manualControls = document.getElementById('manualControls'); // <-- MEJORA: Asignado aquí
+    manualControls = document.getElementById('manualControls');
+    deleteShapeButton = document.getElementById('deleteShapeButton'); // <-- NUEVO
 
     // Referencias del Modal
     improveModal = document.getElementById('improveModal');
@@ -594,7 +749,7 @@ function main() {
         initApiKeys(savedKey); // CAMBIO: Usamos el nuevo inicializador
     }
 
-    // Cargar galería desde localStorage
+    // Cargar galería (ahora inicializa una galería vacía)
     initGallery();
 
     // --- Asignar eventos ---
@@ -611,6 +766,7 @@ function main() {
     copySvgButton.addEventListener('click', handleCopySvg);
     downloadGalleryButton.addEventListener('click', handleDownloadGallery);
     uploadGalleryInput.addEventListener('change', handleGalleryUpload);
+    deleteShapeButton.addEventListener('click', handleDeleteShape); // <-- NUEVO
 
     // Botones del Modal
     modalImproveCancel.addEventListener('click', () => {
@@ -621,12 +777,12 @@ function main() {
     modalImproveConfirm.addEventListener('click', handleImprove);
     modalDuplicate.addEventListener('click', handleDuplicate);
     
-    // Flujo de borrado
+    // Flujo de borrado (dentro del modal)
     modalDelete.addEventListener('click', showDeleteConfirmation);
     modalDeleteCancelBtn.addEventListener('click', hideDeleteConfirmation);
     modalDeleteConfirmBtn.addEventListener('click', handleDelete);
 
-    // Event listener para los controles manuales
+    // Event listener para los controles manuales (Pan/Zoom)
     manualControls.addEventListener('click', async (e) => {
         if (e.target.tagName !== 'BUTTON') return;
         if (!currentSelectedId) return;
@@ -642,16 +798,13 @@ function main() {
         const newSvgContent = manipulateViewBox(currentItem.svgContent, action);
     
         // 2. Actualizar el item en la galería (¡importante!)
+        // Esto guarda el cambio (en memoria)
         updateGalleryItem(currentSelectedId, { svgContent: newSvgContent });
     
-        // 3. Refrescar la vista previa (asincrónicamente)
-        try {
-            const pngDataUrl = await svgToPngDataURL(newSvgContent);
-            showResultInPreview(pngDataUrl, newSvgContent, currentItem.prompt);
-        } catch (error) {
-            console.error("Error al refrescar vista previa tras manipulación:", error);
-            showStatus("Error al refrescar vista previa.", true);
-        }
+        // 3. Refrescar la vista previa
+        // ¡IMPORTANTE! Llamamos a showResultInPreview con el *nuevo* string.
+        // Esto recargará el editor con el viewBox actualizado.
+        showResultInPreview(newSvgContent, currentItem.prompt);
     });
 }
 
