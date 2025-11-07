@@ -10,7 +10,7 @@ import { initApiKeys } from './apisistema.js';
 import { svgToPngDataURL } from './svgeditar.js'; // <-- CAMBIO: Importamos el conversor de PNG
 import { generarImagenDesdePrompt } from './svggeneracion.js';
 import { mejorarImagenDesdeSVG } from './svgmejora.js';
-
+import { manipulateViewBox } from './svgmanual.js';
 // --- Variables de Estado ---
 let svgGallery = [];
 let currentSelectedId = null;
@@ -24,7 +24,8 @@ let apiKeyInput, promptInput, generateButton,
     modalImproveCancel, modalRenameSave, modalImproveConfirm,
     modalDuplicate, modalDelete,
     modalDeleteConfirm, modalDeleteConfirmBtn, modalDeleteCancelBtn,
-    svgCode, svgCodeContainer, svgCodeWrapper, actionsSection;
+    svgCode, svgCodeContainer, svgCodeWrapper, actionsSection,
+    manualControls; // <-- MEJORA: Declarado aquí
 
 
 // --- Funciones de la UI ---
@@ -69,6 +70,7 @@ function showResultInPreview(pngDataUrl, svgContent, prompt) {
     
     actionsSection.classList.remove('hidden');
     svgCodeWrapper.classList.remove('hidden');
+    manualControls.classList.remove('hidden'); // <-- MEJORA: Mostrar controles
 }
 
 /**
@@ -79,6 +81,7 @@ function clearPreview() {
     svgCode.textContent = "...";
     actionsSection.classList.add('hidden');
     svgCodeWrapper.classList.add('hidden');
+    manualControls.classList.add('hidden'); // <-- MEJORA: Ocultar controles
     currentSelectedId = null;
 }
 
@@ -568,6 +571,7 @@ function main() {
     svgCodeContainer = document.getElementById('svgCodeContainer');
     svgCodeWrapper = document.getElementById('svgCodeWrapper');
     galleryGrid = document.getElementById('galleryGrid');
+    manualControls = document.getElementById('manualControls'); // <-- MEJORA: Asignado aquí
 
     // Referencias del Modal
     improveModal = document.getElementById('improveModal');
@@ -621,6 +625,34 @@ function main() {
     modalDelete.addEventListener('click', showDeleteConfirmation);
     modalDeleteCancelBtn.addEventListener('click', hideDeleteConfirmation);
     modalDeleteConfirmBtn.addEventListener('click', handleDelete);
+
+    // Event listener para los controles manuales
+    manualControls.addEventListener('click', async (e) => {
+        if (e.target.tagName !== 'BUTTON') return;
+        if (!currentSelectedId) return;
+    
+        const action = e.target.dataset.action;
+        const itemIndex = svgGallery.findIndex(i => i.id === currentSelectedId);
+    
+        if (itemIndex === -1) return;
+    
+        const currentItem = svgGallery[itemIndex];
+    
+        // 1. Aplicar la manipulación
+        const newSvgContent = manipulateViewBox(currentItem.svgContent, action);
+    
+        // 2. Actualizar el item en la galería (¡importante!)
+        updateGalleryItem(currentSelectedId, { svgContent: newSvgContent });
+    
+        // 3. Refrescar la vista previa (asincrónicamente)
+        try {
+            const pngDataUrl = await svgToPngDataURL(newSvgContent);
+            showResultInPreview(pngDataUrl, newSvgContent, currentItem.prompt);
+        } catch (error) {
+            console.error("Error al refrescar vista previa tras manipulación:", error);
+            showStatus("Error al refrescar vista previa.", true);
+        }
+    });
 }
 
 // Esperar a que el DOM esté listo para ejecutar la inicialización
