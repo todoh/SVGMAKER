@@ -206,7 +206,7 @@ header p {
 
 /* --- Columna de Vista Previa --- */
 #previewArea {
-    width: 100%;
+    width: 100%;   position: relative;
     aspect-ratio: 1 / 1; /* aspect-square */
     background-color: #e5e7eb; /* bg-gray-200 */
     border-radius: 0.5rem; /* rounded-lg */
@@ -231,6 +231,18 @@ header p {
     object-fit: contain;
     border-radius: 0.5rem; /* rounded-lg */
 }
+
+#previewArea canvas {
+    display: block; /* Asegura que no tenga espacio extra */
+    width: 100%;
+    height: 100%;
+    position: absolute; /* Lo posiciona dentro de previewArea */
+    top: 0;
+    left: 0;
+    border-radius: 0.5rem; /* Hereda el borde redondeado */
+}
+
+
 .selection-rectangle {
     fill: rgba(59, 130, 246, 0.2); /* Relleno azul semitransparente */
     stroke: #3b82f6; /* Borde azul */
@@ -547,4 +559,29 @@ header p {
     .actions-container {
         flex-direction: row; /* sm:flex-row */
     }
+}
+
+/* Estilos para la nueva sección de Controles 3D */
+#controls3DSection .textarea-field {
+    margin-bottom: 0.75rem; /* mb-3 */
+}
+.actions-3d-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem; /* gap-3 */
+}
+
+@media (min-width: 640px) { /* sm: */
+    .actions-3d-buttons {
+        flex-direction: row; /* Botones en línea en pantallas más grandes */
+    }
+    .actions-3d-buttons .btn {
+        flex: 1; /* Ocupan el mismo espacio */
+    }
+}
+
+
+/* --- Responsividad --- */
+@media (min-width: 768px) { /* md: */
+    /* ... (Estilos responsivos existentes) ... */
 }
