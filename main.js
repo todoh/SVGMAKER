@@ -22,7 +22,8 @@ let currentMode = 'none'; // 'none', '2d', '3d'
 
 // --- Referencias a elementos DOM ---
 let apiKeyInput, promptInput, generateButton,
-    copySvgButton, previewArea, statusMessage, loader,
+    copySvgButton, downloadSvgButton, // <-- AÑADIDA downloadSvgButton
+    previewArea, statusMessage, loader,
     modelSelect, galleryGrid, downloadGalleryButton, uploadGalleryInput,
     improveModal, modalItemName, modalImprovePrompt,
     modalImproveCancel, modalRenameSave, modalImproveConfirm,
@@ -32,8 +33,9 @@ let apiKeyInput, promptInput, generateButton,
     manualControls, 
     deleteShapeButton, modalImproveSection;
 
-// --- NUEVAS REFERENCIAS DOM 3D ---
-let controls3DSection, prompt3D, generate3DButton, edit3DButton;
+// --- NUEVAS REFERENCIAS DOM 3D (MODIFICADAS) ---
+let controls3DSection, prompt3D, generate3DButton, edit3DButton,
+    copy3DModelButton, download3DModelButton; // <-- AÑADIDO download3DModelButton
 
 
 // --- Funciones de la UI ---
@@ -70,7 +72,7 @@ function showStatus(message, isError = false) {
 function showResultInPreview(item) {
     const { svgContent, prompt, id } = item;
     
-    // 1. Limpiar CUALQUIER visor anterior (2D o 3D)
+    // 1. Limpiar CUALQUER visor anterior (2D o 3D)
     clearPreviewArea();
     currentMode = '2d';
     currentSelectedId = id;
@@ -106,6 +108,8 @@ function showResultInPreview(item) {
     // 5. Mostrar UI 3D (para permitir la generación desde 2D)
     controls3DSection.classList.remove('hidden');
     prompt3D.value = ""; // Limpiar el prompt 3D
+    copy3DModelButton.classList.add('hidden'); // Ocultar botón de copia 3D
+    download3DModelButton.classList.add('hidden'); // <-- AÑADIDO (Ocultar botón de descarga 3D)
     
     // 6. Resaltar en galería
     highlightGalleryItem(id);
@@ -118,7 +122,7 @@ function showResultInPreview(item) {
 function show3DModelInPreview(item) {
     const { model3d, id, name } = item;
 
-    // 1. Limpiar CUALQUIER visor anterior (2D o 3D)
+    // 1. Limpiar CUALQUER visor anterior (2D o 3D)
     clearPreviewArea();
     currentMode = '3d';
     currentSelectedId = id;
@@ -143,6 +147,8 @@ function show3DModelInPreview(item) {
     
     // 4. Mostrar UI 3D (para permitir la edición)
     controls3DSection.classList.remove('hidden');
+    copy3DModelButton.classList.remove('hidden'); // Mostrar botón de copia 3D
+    download3DModelButton.classList.remove('hidden'); // <-- AÑADIDO (Mostrar botón de descarga 3D)
     
     // 5. Ocultar UI 2D
     actionsSection.classList.add('hidden');
@@ -669,6 +675,7 @@ function handleCopySvg() {
     textarea.select();
     
     try {
+        // Usamos execCommand por compatibilidad en iFrames
         document.execCommand('copy');
         showStatus("¡SVG copiado al portapapeles!", false);
         
@@ -684,6 +691,142 @@ function handleCopySvg() {
     }
     
     document.body.removeChild(textarea);
+}
+
+/**
+ * =================================================================
+ * AÑADIDA ESTA NUEVA FUNCIÓN
+ * =================================================================
+ * Descarga el SVG seleccionado como un archivo .svg.
+ */
+function handleDownloadSvg() {
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+    if (currentMode !== '2d' || !item || !item.svgContent) {
+        showStatus("No hay SVG para descargar.", true);
+        return;
+    }
+
+    try {
+        // 1. Obtener el contenido SVG
+        const svgString = item.svgContent;
+
+        // 2. Crear un Blob
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+
+        // 3. Crear una URL para el Blob
+        const url = URL.createObjectURL(blob);
+
+        // 4. Crear un enlace de descarga
+        const a = document.createElement('a');
+        a.href = url;
+
+        // 5. Crear un nombre de archivo
+        const fileName = (item.name || 'dibujo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${fileName}.svg`;
+
+        // 6. Simular click
+        document.body.appendChild(a);
+        a.click();
+
+        // 7. Limpiar
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus("SVG descargado.", false);
+
+    } catch (err) {
+        console.error('Error al descargar SVG:', err);
+        showStatus("Error al descargar. Revisa la consola.", true);
+    }
+}
+
+
+/**
+ * Copia el modelo 3D (GLTF JSON) seleccionado al portapapeles.
+ */
+async function handleCopy3DModel() {
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+    
+    if (currentMode !== '3d' || !item || !item.model3d || !item.model3d.data) {
+        showStatus("No hay datos de modelo 3D para copiar.", true);
+        return;
+    }
+
+    try {
+        const modelString = JSON.stringify(item.model3d.data, null, 2); 
+
+        // Usar un textarea y execCommand como fallback para iFrames
+        const textarea = document.createElement('textarea');
+        textarea.value = modelString;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = 0;
+        document.body.appendChild(textarea);
+        textarea.select();
+    
+        document.execCommand('copy');
+        showStatus("¡GLTF JSON copiado al portapapeles!", false);
+        
+        document.body.removeChild(textarea);
+        
+        // Actualizar texto del botón temporalmente
+        const originalText = copy3DModelButton.textContent;
+        copy3DModelButton.textContent = "¡Copiado!";
+        copy3DModelButton.disabled = true;
+        
+        setTimeout(() => {
+            copy3DModelButton.textContent = originalText;
+            copy3DModelButton.disabled = false;
+        }, 2000);
+
+    } catch (err) {
+        console.error('Error al copiar GLTF JSON:', err);
+        showStatus("Error al copiar. Revisa la consola.", true);
+    }
+}
+
+/**
+ * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
+ */
+function handleDownload3DModel() {
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+    
+    if (currentMode !== '3d' || !item || !item.model3d || !item.model3d.data) {
+        showStatus("No hay datos de modelo 3D para descargar.", true);
+        return;
+    }
+
+    try {
+        // 1. Convertir el objeto JSON a un string
+        const modelString = JSON.stringify(item.model3d.data, null, 2); 
+        
+        // 2. Crear un Blob (archivo en memoria)
+        const blob = new Blob([modelString], { type: 'application/json' });
+        
+        // 3. Crear una URL para el Blob
+        const url = URL.createObjectURL(blob);
+        
+        // 4. Crear un enlace de descarga (<a>)
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.gltf)
+        const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${fileName}.gltf`; // .gltf es la extensión para el JSON de GLTF
+        
+        // 6. Simular un click en el enlace
+        document.body.appendChild(a);
+        a.click();
+        
+        // 7. Limpiar
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showStatus("Modelo 3D descargado.", false);
+
+    } catch (err) {
+        console.error('Error al descargar GLTF JSON:', err);
+        showStatus("Error al descargar. Revisa la consola.", true);
+    }
 }
 
 /**
@@ -755,6 +898,8 @@ function handleGenerate3D() {
 
     generate3DButton.disabled = true; // Deshabilita temporalmente
     edit3DButton.disabled = true;
+    copy3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
+    download3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
     
     showStatus("Añadido a la cola de generación 3D...", false);
 
@@ -780,6 +925,9 @@ function handleGenerate3D() {
     // =================================================================
     generate3DButton.disabled = false;
     edit3DButton.disabled = false;
+    copy3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
+    download3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
+
 
     // --- Iniciar tarea asíncrona ---
     (async () => {
@@ -856,6 +1004,8 @@ function handleEdit3D() {
 
     generate3DButton.disabled = true; // Deshabilita temporalmente
     edit3DButton.disabled = true;
+    copy3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
+    download3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
     
     showStatus("Añadido a la cola de edición 3D...", false);
 
@@ -878,6 +1028,8 @@ function handleEdit3D() {
     // =================================================================
     generate3DButton.disabled = false;
     edit3DButton.disabled = false;
+    copy3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
+    download3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
 
     // --- Iniciar tarea asíncrona ---
     (async () => {
@@ -927,6 +1079,7 @@ function main() {
     promptInput = document.getElementById('promptInput');
     generateButton = document.getElementById('generateButton');
     copySvgButton = document.getElementById('copySvgButton');
+    downloadSvgButton = document.getElementById('donwloadSvgButton'); // <-- AÑADIDA ASIGNACIÓN (con el ID "donwload")
     downloadGalleryButton = document.getElementById('downloadGalleryButton');
     uploadGalleryInput = document.getElementById('uploadGalleryInput');
     previewArea = document.getElementById('previewArea');
@@ -940,11 +1093,13 @@ function main() {
     manualControls = document.getElementById('manualControls');
     deleteShapeButton = document.getElementById('deleteShapeButton');
 
-    // --- NUEVAS REFERENCIAS 3D ---
+    // --- NUEVAS REFERENCIAS 3D (MODIFICADAS) ---
     controls3DSection = document.getElementById('controls3DSection');
     prompt3D = document.getElementById('prompt3D');
     generate3DButton = document.getElementById('generate3DButton');
     edit3DButton = document.getElementById('edit3DButton');
+    copy3DModelButton = document.getElementById('copy3DModelButton'); // <-- Asignación
+    download3DModelButton = document.getElementById('download3DModelButton'); // <-- AÑADIDA ASIGNACIÓN
 
     // Referencias del Modal
     improveModal = document.getElementById('improveModal');
@@ -983,13 +1138,16 @@ function main() {
     // Botones principales
     generateButton.addEventListener('click', handleGenerate);
     copySvgButton.addEventListener('click', handleCopySvg);
+    downloadSvgButton.addEventListener('click', handleDownloadSvg); // <-- AÑADIDO EVENTO
     downloadGalleryButton.addEventListener('click', handleDownloadGallery);
     uploadGalleryInput.addEventListener('change', handleGalleryUpload);
     deleteShapeButton.addEventListener('click', handleDeleteShape); 
     
-    // --- NUEVOS EVENTOS 3D ---
+    // --- NUEVOS EVENTOS 3D (MODIFICADOS) ---
     generate3DButton.addEventListener('click', handleGenerate3D);
     edit3DButton.addEventListener('click', handleEdit3D);
+    copy3DModelButton.addEventListener('click', handleCopy3DModel); // <-- Asignación de evento
+    download3DModelButton.addEventListener('click', handleDownload3DModel); // <-- AÑADIDO EVENTO
 
     // Botones del Modal
     modalImproveCancel.addEventListener('click', () => {
