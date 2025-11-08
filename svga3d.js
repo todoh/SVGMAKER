@@ -442,3 +442,33 @@ export async function edit3DModel(modelData, sourceSvgContent, prompt, model) {
     
     return newModel;
 }
+
+ 
+/**
+ * Exporta la escena 3D actual (visible) a un ArrayBuffer binario (GLB).
+ * @returns {Promise<ArrayBuffer>} Una promesa que resuelve con el ArrayBuffer del GLB.
+ */
+export function exportSceneToGLB() {
+    if (!scene) {
+        return Promise.reject("La escena 3D no está inicializada.");
+    }
+
+    // Importamos el exporter aquí dentro o lo movemos a las importaciones globales
+    // (Asumiendo que GLTFExporter ya está importado al inicio del archivo)
+    const exporter = new GLTFExporter();
+
+    return new Promise((resolve, reject) => {
+        exporter.parse(
+            scene, // Exporta la escena principal que se está renderizando
+            (gltfBinary) => {
+                console.log("Exportación a GLB de la escena actual completa.");
+                resolve(gltfBinary); // Devuelve el ArrayBuffer binario
+            },
+            (error) => {
+                console.error('Error al exportar la escena a GLB:', error);
+                reject(error);
+            },
+            { binary: true } // ¡Exportar como binario (.glb)!
+        );
+    });
+}

@@ -13,8 +13,7 @@ import { manipulateViewBox } from './svgmanual.js';
 import { makeSvgInteractive, deleteSelectedElement, clearSelection, deactivateSvgInteraction } from './svginteract.js';
 
 // --- NUEVAS IMPORTACIONES 3D ---
-import { init3DViewer, clear3DViewer, generate3DModel, edit3DModel, renderModel } from './svga3d.js';
-
+import { init3DViewer, clear3DViewer, generate3DModel, edit3DModel, renderModel, exportSceneToGLB } from './svga3d.js';
 // --- Variables de Estado ---
 let svgGallery = [];
 let currentSelectedId = null;
@@ -699,44 +698,54 @@ function handleCopySvg() {
  * =================================================================
  * Descarga el SVG seleccionado como un archivo .svg.
  */
-function handleDownloadSvg() {
+/**
+ * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
+ */
+async function handleDownload3DModel() { // <-- Convertida a async
     const item = svgGallery.find(i => i.id === currentSelectedId);
-    if (currentMode !== '2d' || !item || !item.svgContent) {
-        showStatus("No hay SVG para descargar.", true);
+    
+    if (currentMode !== '3d' || !item || !item.model3d) {
+        showStatus("No hay un modelo 3D activo para descargar.", true);
         return;
     }
 
+    showStatus("Preparando descarga GLB...", false);
+    download3DModelButton.disabled = true; // Deshabilitar mientras se procesa
+
     try {
-        // 1. Obtener el contenido SVG
-        const svgString = item.svgContent;
+        // 1. Llamar a la nueva función de exportación
+        const glbData = await exportSceneToGLB(); // Esto es un ArrayBuffer
 
-        // 2. Crear un Blob
-        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-
+        // 2. Crear un Blob (archivo en memoria)
+        // El MIME type para GLB es 'model/gltf-binary'
+        const blob = new Blob([glbData], { type: 'model/gltf-binary' });
+        
         // 3. Crear una URL para el Blob
         const url = URL.createObjectURL(blob);
-
-        // 4. Crear un enlace de descarga
+        
+        // 4. Crear un enlace de descarga (<a>)
         const a = document.createElement('a');
         a.href = url;
-
-        // 5. Crear un nombre de archivo
-        const fileName = (item.name || 'dibujo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${fileName}.svg`;
-
-        // 6. Simular click
+        
+        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.glb)
+        const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${fileName}.glb`; // <-- ¡Extensión .glb!
+        
+        // 6. Simular un click en el enlace
         document.body.appendChild(a);
         a.click();
-
+        
         // 7. Limpiar
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
-        showStatus("SVG descargado.", false);
+        
+        showStatus("Modelo 3D (.glb) descargado.", false);
 
     } catch (err) {
-        console.error('Error al descargar SVG:', err);
-        showStatus("Error al descargar. Revisa la consola.", true);
+        console.error('Error al descargar GLB:', err);
+        showStatus("Error al descargar el GLB. Revisa la consola.", true);
+    } finally {
+        download3DModelButton.disabled = false; // Rehabilitar el botón
     }
 }
 
