@@ -793,50 +793,7 @@ async function handleCopy3DModel() {
     }
 }
 
-/**
- * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
- */
-function handleDownload3DModel() {
-    const item = svgGallery.find(i => i.id === currentSelectedId);
-    
-    if (currentMode !== '3d' || !item || !item.model3d || !item.model3d.data) {
-        showStatus("No hay datos de modelo 3D para descargar.", true);
-        return;
-    }
-
-    try {
-        // 1. Convertir el objeto JSON a un string
-        const modelString = JSON.stringify(item.model3d.data, null, 2); 
-        
-        // 2. Crear un Blob (archivo en memoria)
-        const blob = new Blob([modelString], { type: 'application/json' });
-        
-        // 3. Crear una URL para el Blob
-        const url = URL.createObjectURL(blob);
-        
-        // 4. Crear un enlace de descarga (<a>)
-        const a = document.createElement('a');
-        a.href = url;
-        
-        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.gltf)
-        const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${fileName}.gltf`; // .gltf es la extensión para el JSON de GLTF
-        
-        // 6. Simular un click en el enlace
-        document.body.appendChild(a);
-        a.click();
-        
-        // 7. Limpiar
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        showStatus("Modelo 3D descargado.", false);
-
-    } catch (err) {
-        console.error('Error al descargar GLTF JSON:', err);
-        showStatus("Error al descargar. Revisa la consola.", true);
-    }
-}
+ 
 
 /**
  * Descarga la galería completa como un archivo JSON.
