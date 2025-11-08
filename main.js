@@ -118,7 +118,7 @@ function showResultInPreview(item) {
  * Muestra el visor 3D en la vista previa.
  * @param {object} item - El item de la galería (debe tener .model3d).
  */
-function show3DModelInPreview(item) {
+async function show3DModelInPreview(item) { // <-- 1. AÑADIR 'async'
     const { model3d, id, name } = item;
 
     // 1. Limpiar CUALQUER visor anterior (2D o 3D)
@@ -132,29 +132,27 @@ function show3DModelInPreview(item) {
         
         // 3. Renderizar el modelo
         if (model3d && model3d.data) {
-            renderModel(model3d.data);
+            await renderModel(model3d.data); // <-- 2. AÑADIR 'await'
             prompt3D.value = model3d.prompt || ""; // Cargar el prompt que lo generó
         } else {
             throw new Error("El item no contiene datos de modelo 3D válidos.");
         }
     } catch (e) {
-        console.error("Error al inicializar el visor 3D:", e);
+        console.error("Error al inicializar o renderizar el visor 3D:", e); // <-- Error mejorado
         showStatus("Error al mostrar el modelo 3D.", true);
         previewArea.innerHTML = "<p>Error al mostrar el modelo 3D.</p>";
         return;
     }
     
-    // 4. Mostrar UI 3D (para permitir la edición)
+    // ... (el resto de la función sigue igual) ...
     controls3DSection.classList.remove('hidden');
-    copy3DModelButton.classList.remove('hidden'); // Mostrar botón de copia 3D
-    download3DModelButton.classList.remove('hidden'); // <-- AÑADIDO (Mostrar botón de descarga 3D)
+    copy3DModelButton.classList.remove('hidden'); 
+    download3DModelButton.classList.remove('hidden'); 
     
-    // 5. Ocultar UI 2D
     actionsSection.classList.add('hidden');
     svgCodeWrapper.classList.add('hidden');
     manualControls.classList.add('hidden');
     
-    // 6. Resaltar en galería
     highlightGalleryItem(id);
 }
 
@@ -382,12 +380,13 @@ function handleGenerate() {
     })();
 }
 
+ 
 /**
  * Maneja el click en un item de la galería.
  * Decide si mostrar el editor 2D o el visor 3D.
  * @param {object} item - El item de la galería clickeado.
  */
-function handleGalleryItemClick(item) {
+async function handleGalleryItemClick(item) { // <-- 1. AÑADIR 'async'
     if (item.status !== 'completed') return;
     if (currentSelectedId === item.id) return; // Ya seleccionado
 
@@ -396,10 +395,9 @@ function handleGalleryItemClick(item) {
         showResultInPreview(item);
     } else if (item.model3d) {
         // Es un modelo 3D, mostrar visor 3D
-        show3DModelInPreview(item);
+        await show3DModelInPreview(item); // <-- 2. AÑADIR 'await'
     }
 }
-
 /**
  * Maneja el click en el botón 'Editar' de un item de la galería.
  * @param {object} item - El item de la galería clickeado.
@@ -692,62 +690,7 @@ function handleCopySvg() {
     document.body.removeChild(textarea);
 }
 
-/**
- * =================================================================
- * AÑADIDA ESTA NUEVA FUNCIÓN
- * =================================================================
- * Descarga el SVG seleccionado como un archivo .svg.
- */
-/**
- * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
- */
-async function handleDownload3DModel() { // <-- Convertida a async
-    const item = svgGallery.find(i => i.id === currentSelectedId);
-    
-    if (currentMode !== '3d' || !item || !item.model3d) {
-        showStatus("No hay un modelo 3D activo para descargar.", true);
-        return;
-    }
-
-    showStatus("Preparando descarga GLB...", false);
-    download3DModelButton.disabled = true; // Deshabilitar mientras se procesa
-
-    try {
-        // 1. Llamar a la nueva función de exportación
-        const glbData = await exportSceneToGLB(); // Esto es un ArrayBuffer
-
-        // 2. Crear un Blob (archivo en memoria)
-        // El MIME type para GLB es 'model/gltf-binary'
-        const blob = new Blob([glbData], { type: 'model/gltf-binary' });
-        
-        // 3. Crear una URL para el Blob
-        const url = URL.createObjectURL(blob);
-        
-        // 4. Crear un enlace de descarga (<a>)
-        const a = document.createElement('a');
-        a.href = url;
-        
-        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.glb)
-        const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${fileName}.glb`; // <-- ¡Extensión .glb!
-        
-        // 6. Simular un click en el enlace
-        document.body.appendChild(a);
-        a.click();
-        
-        // 7. Limpiar
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        showStatus("Modelo 3D (.glb) descargado.", false);
-
-    } catch (err) {
-        console.error('Error al descargar GLB:', err);
-        showStatus("Error al descargar el GLB. Revisa la consola.", true);
-    } finally {
-        download3DModelButton.disabled = false; // Rehabilitar el botón
-    }
-}
+ 
 
 
 /**
@@ -820,7 +763,103 @@ function handleDownloadGallery() {
     
     showStatus("Galería JSON descargada.", false);
 }
+/**
+ * =================================================================
+ * AÑADIDA ESTA NUEVA FUNCIÓN
+ * =================================================================
+ * Descarga el SVG seleccionado como un archivo .svg.
+ */
+function handleDownloadSvg() {
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+    if (currentMode !== '2d' || !item || !item.svgContent) {
+        showStatus("No hay SVG para descargar.", true);
+        return;
+    }
 
+    try {
+        // 1. Obtener el contenido SVG
+        const svgString = item.svgContent;
+
+        // 2. Crear un Blob
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+
+        // 3. Crear una URL para el Blob
+        const url = URL.createObjectURL(blob);
+
+        // 4. Crear un enlace de descarga
+        const a = document.createElement('a');
+        a.href = url;
+
+        // 5. Crear un nombre de archivo
+        const fileName = (item.name || 'dibujo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${fileName}.svg`;
+
+        // 6. Simular click
+        document.body.appendChild(a);
+        a.click();
+
+        // 7. Limpiar
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus("SVG descargado.", false);
+
+    } catch (err) {
+        console.error('Error al descargar SVG:', err);
+        showStatus("Error al descargar. Revisa la consola.", true);
+    }
+}
+
+/**
+ * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
+ */
+async function handleDownload3DModel() { // <-- Convertida a async
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+
+    if (currentMode !== '3d' || !item || !item.model3d) {
+        showStatus("No hay un modelo 3D activo para descargar.", true);
+        return;
+    }
+
+    showStatus("Preparando descarga GLB...", false);
+    download3DModelButton.disabled = true; // Deshabilitar mientras se procesa
+
+    try {
+        // 1. Llamar a la nueva función de exportación
+        const glbData = await exportSceneToGLB(); // Esto es un ArrayBuffer
+
+        // 2. Crear un Blob (archivo en memoria)
+        // El MIME type para GLB es 'model/gltf-binary'
+        const blob = new Blob([glbData], { type: 'model/gltf-binary' });
+
+        // 3. Crear una URL para el Blob
+        const url = URL.createObjectURL(blob);
+
+        // 4. Crear un enlace de descarga (<a>)
+        const a = document.createElement('a');
+        a.href = url;
+
+        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.glb)
+        const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${fileName}.glb`; // <-- ¡Extensión .glb!
+
+        // 6. Simular un click en el enlace
+        document.body.appendChild(a);
+        a.click();
+
+        // 7. Limpiar
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus("Modelo 3D (.glb) descargado.", false);
+
+    } catch (err) {
+        console.error('Error al descargar GLB:', err);
+        showStatus("Error al descargar el GLB. Revisa la consola.", true);
+    } finally {
+        download3DModelButton.disabled = false; // Rehabilitar el botón
+    }
+}
 /**
  * Maneja el click en el botón "Eliminar Forma" (SOLO 2D).
  */

@@ -8,17 +8,17 @@
 // =================================================================
 
 // Importamos Three.js y los loaders/controles
-import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
-import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
-import { SVGLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/SVGLoader.js';
-import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/GLTFLoader.js';
-import { GLTFExporter } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/exporters/GLTFExporter.js';
+import * as THREE from 'https://cdn.skypack.dev/three@0.135.0';
+import { OrbitControls } from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/controls/OrbitControls.js';
+import { SVGLoader } from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/loaders/SVGLoader.js';
+import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'https://cdn.skypack.dev/three@0.135.0/examples/jsm/exporters/GLTFExporter.js';
 
 // Importamos la función de llamada a la API de Gemini
 import { callGenerativeApi } from './svgeditar.js';
 
 let renderer, scene, camera, controls;
-
+let currentLoadedModel = null;
 // --- ¡NUEVA FUNCIÓN DE ANÁLISIS ESTRUCTURAL! ---
 /**
  * Analiza el contenido SVG y extrae información estructural simple.
@@ -205,29 +205,69 @@ export function clear3DViewer(container) {
         scene = null;
         camera = null;
         controls = null;
+        currentLoadedModel = null; // <--- AÑADE ESTA LÍNEA
     }
 }
 
-/**
- * Renderiza un modelo 3D (cargado) en la escena.
- * (Esta función no cambia)
- */
-export function renderModel(modelData) {
-    if (!scene) {
-        console.error("La escena 3D no está inicializada.");
-        return;
-    }
-    scene.children.forEach(child => {
-        if (child.isMesh || child.isGroup) {
-            scene.remove(child);
-        }
-    });
+// =================================================================
+// ARCHIVO: svga3d.js
+// ... (alrededor de la línea 200) ...
+// =================================================================
 
-    const loader = new GLTFLoader();
-    loader.parse(JSON.stringify(modelData), '', (gltf) => {
-        scene.add(gltf.scene);
-    }, (error) => {
-        console.error('Error al parsear el GLTF:', error);
+// =================================================================
+// ARCHIVO: svga3d.js
+// ... (alrededor de la línea 204) ...
+// =================================================================
+
+export function renderModel(modelData) {
+    // 1. Envolvemos todo en una nueva Promesa
+    return new Promise((resolve, reject) => {
+        if (!scene) {
+            console.error("La escena 3D no está inicializada.");
+            return reject(new Error("La escena 3D no está inicializada."));
+        }
+        
+        // Limpia el modelo anterior si existe
+        if (currentLoadedModel) {
+            scene.remove(currentLoadedModel);
+        }
+        scene.children.filter(child => child.isMesh || child.isGroup).forEach(child => {
+            scene.remove(child);
+        });
+        
+        currentLoadedModel = null; // Resetea la referencia
+
+        const loader = new GLTFLoader();
+        loader.parse(JSON.stringify(modelData), '', (gltf) => {
+            
+            // ======================================================
+            // AQUÍ ESTÁ LA CORRECCIÓN COMPLETA
+            // ======================================================
+
+            // ANTES: const modelGroup = gltf.scene.children[0];
+            const model = gltf.scene; // <-- CAMBIO 1: Usar la escena completa
+
+            if (model) { // <-- CAMBIO 2: Comprobar 'model' (no 'modelGroup')
+                
+                currentLoadedModel = model; // <-- CAMBIO 3: Asignar 'model' (no 'modelGroup')
+                scene.add(currentLoadedModel);
+                console.log("Modelo 3D (gltf.scene) cargado y guardado en 'currentLoadedModel'.", currentLoadedModel); // <-- CAMBIO 4 (Log)
+                resolve(); 
+            
+            } else {
+                console.error("GLTF Loader parseó la escena, pero no se encontró un modelo (gltf.scene)."); // <-- CAMBIO 5 (Log)
+                currentLoadedModel = null;
+                reject(new Error("GLTF Loader no encontró una escena.")); // <-- CAMBIO 6 (Error)
+            }
+            // ======================================================
+            // FIN DE LA CORRECCIÓN
+            // ======================================================
+
+        }, (error) => {
+            console.error('Error al parsear el GLTF:', error);
+            currentLoadedModel = null;
+            reject(error);
+        });
     });
 }
 
@@ -446,29 +486,80 @@ export async function edit3DModel(modelData, sourceSvgContent, prompt, model) {
  
 /**
  * Exporta la escena 3D actual (visible) a un ArrayBuffer binario (GLB).
+ * ¡VERSIÓN CORREGIDA PARA THREE.JS r132!
  * @returns {Promise<ArrayBuffer>} Una promesa que resuelve con el ArrayBuffer del GLB.
  */
 export function exportSceneToGLB() {
-    if (!scene) {
-        return Promise.reject("La escena 3D no está inicializada.");
+    // 1. Verificaciones iniciales
+    if (!scene || !currentLoadedModel) {
+        console.error("Error de exportación: La escena o el modelo no están inicializados.", { scene, currentLoadedModel });
+        return Promise.reject("La escena 3D o el modelo no están inicializados.");
+    }
+    
+    // 2. Usar el modelo completo en lugar de solo el hijo[0]
+    const meshContainer = currentLoadedModel;  // Exporta el root completo (gltf.scene)
+
+    // 3. Verificación de seguridad
+    if (!meshContainer) {
+        console.error("Error de exportación: No se encontró el modelo cargado.", currentLoadedModel);
+        return Promise.reject("El modelo cargado no está disponible.");
     }
 
-    // Importamos el exporter aquí dentro o lo movemos a las importaciones globales
-    // (Asumiendo que GLTFExporter ya está importado al inicio del archivo)
+    // Agregar logs de depuración para verificar el contenido
+    console.log("MeshContainer para exportar:", meshContainer);
+    console.log("Número de hijos en meshContainer:", meshContainer.children.length);
+    if (meshContainer.children.length > 0) {
+        console.log("Hijo[0] (grupo esperado):", meshContainer.children[0]);
+        console.log("Número de meshes en el grupo:", meshContainer.children[0].children.length);
+    }
+
+    // 4. Creamos una escena temporal para la exportación
+    const tempExportScene = new THREE.Scene();
+
+    // 5. Movemos el modelo completo a la escena temporal
+    tempExportScene.add(meshContainer);
+
     const exporter = new GLTFExporter();
 
-    return new Promise((resolve, reject) => {
-        exporter.parse(
-            scene, // Exporta la escena principal que se está renderizando
-            (gltfBinary) => {
-                console.log("Exportación a GLB de la escena actual completa.");
-                resolve(gltfBinary); // Devuelve el ArrayBuffer binario
-            },
-            (error) => {
-                console.error('Error al exportar la escena a GLB:', error);
-                reject(error);
-            },
-            { binary: true } // ¡Exportar como binario (.glb)!
-        );
+    // 6. Creamos la promesa de exportación (sin onError callback para compatibilidad con r132)
+    const exportPromise = new Promise((resolve, reject) => {
+        try {
+            exporter.parse(
+                tempExportScene, // input
+                (gltfBinary) => {
+                    if (gltfBinary === undefined || !(gltfBinary instanceof ArrayBuffer)) {
+                        console.error("Exportación fallida: No se recibió un ArrayBuffer válido.");
+                        reject(new Error("Exportación no produjo datos binarios válidos."));
+                        return;
+                    }
+                    console.log("Exportación a GLB completa. Tamaño del binario:", gltfBinary.byteLength, "bytes");
+                    resolve(gltfBinary); // Devuelve el ArrayBuffer binario
+                },
+                { binary: true } // options (tercer argumento en r132)
+            );
+        } catch (error) {
+            console.error('Error al exportar a GLB:', error);
+            reject(error);
+        }
     });
+
+    // 7. Función para DEVOLVER el modelo a su padre original (la escena principal)
+    const moveContainerBack = () => {
+        scene.add(meshContainer);  // Lo devolvemos directamente a la escena principal
+    };
+
+    // 8. Retorno de la promesa, asegurando que el 'moveBack' se ejecute
+    //    tanto si hay éxito como si hay error.
+    return exportPromise.then(
+        (gltfBinary) => {
+            // ÉXITO: Devolver el contenedor
+            moveContainerBack();
+            return gltfBinary; // Devolvemos el resultado
+        },
+        (error) => {
+            // ERROR: Devolver el contenedor
+            moveContainerBack();
+            throw error; // Lanzamos el error
+        }
+    );
 }
