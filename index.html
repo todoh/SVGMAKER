@@ -47,9 +47,21 @@
                         <h2 class="card-title">1. Generar Nuevo Dibujo (2D)</h2>
                         <label for="promptInput" class="label">Prompt Principal</label>
                         <textarea id="promptInput" rows="3" class="textarea-field" placeholder="Ej: Un astronauta en la luna, estilo minimalista"></textarea>
-                        <button id="generateButton" class="btn btn-primary">
-                            Añadir a la cola de generación
-                        </button>
+                        
+                        <!-- ================== -->
+                        <!--  CAMBIOS AQUÍ      -->
+                        <!-- ================== -->
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.75rem;">
+                            <button id="generateButton" class="btn btn-primary">
+                                Añadir a la cola (Generar SVG)
+                            </button>
+                            <button id="generateRealisticButton" class="btn btn-purple">
+                                Añadir a la cola (Generar Realista)
+                            </button>
+                        </div>
+                        <!-- ================== -->
+                        <!--  FIN DE CAMBIOS    -->
+                        <!-- ================== -->
                     </div>
 
                 </div>
@@ -72,8 +84,8 @@
                         <button id="copySvgButton" class="btn btn-dark">
                             Copiar SVG
                         </button>
-                        <button id="donwloadSvgButton" class="btn btn-green">
-                            Descargar SVG
+                        <button id="donwloadSvgButton" class="btn btn-success">
+                            Descargar
                         </button>
                         <button id="deleteShapeButton" class="btn btn-danger">
                             Eliminar Forma

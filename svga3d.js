@@ -270,51 +270,61 @@ export function renderModel(modelData) {
         });
     });
 }
-
-// --- ¡FUNCIÓN DE GENERACIÓN MODIFICADA (EL "PODER")! ---
+// --- ¡NUEVA FUNCIÓN DE PROMPT DE REFINAMIENTO! ---
 /**
- * Flujo principal para generar un modelo 3D desde un SVG.
- * @param {string} svgContent - El código SVG.
- * @param {string} prompt - El prompt del usuario para guiar la extrusión/texturizado.
- * @param {string} model - El modelo de IA a utilizar (ej. 'gemini-2.5-pro').
- * @returns {Promise<object>} Una promesa que resuelve con los datos del modelo (ej. GLTF JSON).
+ * Crea el prompt para que la IA refine una escena 3D existente.
+ * @param {object} sceneDescription - El objeto JSON de la escena actual (aiParams).
+ * @param {string} userPrompt - El prompt del usuario para el refinamiento.
+ * @returns {string} El prompt para la API.
  */
-export async function generate3DModel(svgContent, prompt, model) {
-    console.log(`Iniciando generación 3D con ${model}...`, { prompt });
-    
-    // --- ¡NUEVO PASO PREVIO! Analizar la estructura del SVG ---
-    const svgStructure = analyzeSvgStructureSimple(svgContent);
-    const svgStructureJson = svgStructure ? JSON.stringify(svgStructure) : null;
-    console.log("Estructura SVG analizada:", svgStructureJson || "Ninguna");
-    
-    // --- PASO 1: Llamar a la IA para obtener la DESCRIPCIÓN DE ESCENA ---
-    let aiParams;
-    try {
-        // ¡MODIFICADO! Pasamos la estructura a la función del prompt
-        const apiPrompt = create3DScenePrompt(svgContent, svgStructureJson, prompt);
-        
-        aiParams = await callGenerativeApi(apiPrompt, model, true); // true = esperar JSON
-        console.log("Descripción de escena 3D recibida de la IA:", aiParams);
-        
-        // Validar respuesta
-        if (!aiParams || !aiParams.objects || !Array.isArray(aiParams.objects)) {
-            throw new Error("La IA devolvió un JSON de descripción de escena inválido.");
-        }
-    } catch (error) {
-        console.error("Error al llamar a la IA para parámetros 3D:", error);
-        throw new Error(`Error de la IA: ${error.message}`);
-    }
+function create3DRefinementPrompt(sceneDescription, userPrompt) {
+    // Convertimos la escena actual en un string para el prompt
+    const sceneString = JSON.stringify(sceneDescription, null, 2);
 
+    return `
+        Eres un artista 3D experto en refinar un modelo existente.
+
+        MODELO 3D ACTUAL (Descrito como una lista de objetos de escena):
+        \`\`\`json
+        ${sceneString}
+        \`\`\`
+
+        PETICIÓN DE REFINAMIENTO DEL USUARIO:
+        "${userPrompt}"
+
+        TAREA:
+        Analiza el MODELO ACTUAL y la PETICIÓN. Tu objetivo es devolver un NUEVO objeto JSON de escena 3D que cumpla con la petición.
+
+        INSTRUCCIONES:
+        1.  **Si la petición es sobre MATERIALES** (ej. "hazlo de madera", "que sea metálico", "más rojo"):
+            Modifica ÚNICAMENTE las propiedades "material" ("color", "metalness", "roughness") de los objetos existentes. NO cambies la geometría (type, position, scale).
+        2.  **Si la petición es sobre FORMA/GEOMETRÍA** (ej. "añade otro brazo", "más pinchos", "haz el tronco más alto"):
+            Modifica la lista de "objects". Puedes AÑADIR nuevos objetos (ej. más 'cone' para los pinchos), ELIMINAR objetos, o MODIFICAR las propiedades "position", "scale" o "geometry" de los existentes.
+        3.  **Si la petición es mixta** (ej. "añade un brazo de metal"):
+            Aplica ambas lógicas.
+        4.  **No incluyas el SVG original** en tu análisis, estás modificando el 3D que ya existe.
+        5.  Tu respuesta DEBE SER ÚNICAMENTE el objeto JSON de la NUEVA escena, con el mismo formato que el modelo actual (empezando con { "objects": [...] }).
+    `;
+}
+
+// --- ¡NUEVA FUNCIÓN INTERNA PARA CONSTRUIR EL MODELO! ---
+/**
+ * (Función interna) Construye la escena de Three.js y la exporta a GLTF JSON.
+ * @param {object} aiParams - El objeto de descripción de escena (ej. { objects: [...] }).
+ * @param {string} svgContent - El SVG original (necesario para 'extrude_svg').
+ * @returns {Promise<{gltfJson: object, sceneDescription: object}>}
+ */
+async function _buildSceneAndExport(aiParams, svgContent) {
+    
     // --- PASO 2: Construir la escena desde la descripción de la IA ---
+    // (Esta lógica es la misma que estaba en generate3DModel)
     const group = new THREE.Group();
     
-    // Parseamos el SVG solo si algún objeto lo pide
-    const svgData = aiParams.objects.some(obj => obj.type === 'extrude_svg') 
+    const svgData = (svgContent && aiParams.objects.some(obj => obj.type === 'extrude_svg'))
         ? new SVGLoader().parse(svgContent) 
         : null;
 
     for (const obj of aiParams.objects) {
-        // 1. Crear Material
         const material = new THREE.MeshStandardMaterial({
             color: obj.material.color || 0x808080,
             metalness: obj.material.metalness ?? 0.5,
@@ -324,14 +334,12 @@ export async function generate3DModel(svgContent, prompt, model) {
         let geometry;
         let mesh;
         
-        // 2. Crear Geometría
         switch (obj.type) {
             case 'extrude_svg':
                 if (!svgData) {
                     console.warn("La IA pidió 'extrude_svg' pero el SVG no se pudo parsear o no se cargó.");
                     continue;
                 }
-                
                 const geoParams = obj.geometry;
                 const extrudeSettings = {
                     depth: geoParams.extrusionDepth || 20,
@@ -341,7 +349,6 @@ export async function generate3DModel(svgContent, prompt, model) {
                     bevelSize: geoParams.bevelSize ?? 1,
                     bevelThickness: geoParams.bevelThickness ?? 1
                 };
-                
                 const svgGroup = new THREE.Group();
                 svgData.paths.forEach(path => {
                     const shapes = SVGLoader.createShapes(path);
@@ -351,86 +358,48 @@ export async function generate3DModel(svgContent, prompt, model) {
                         svgGroup.add(mesh);
                     });
                 });
-                
                 svgGroup.rotation.x = Math.PI; 
                 svgGroup.scale.set(0.1, 0.1, 0.1);
                 mesh = svgGroup;
                 break;
-                
             case 'sphere':
-                geometry = new THREE.SphereGeometry(
-                    obj.geometry.radius || 100,
-                    obj.geometry.widthSegments || 32,
-                    obj.geometry.heightSegments || 32
-                );
+                geometry = new THREE.SphereGeometry(obj.geometry.radius || 100, obj.geometry.widthSegments || 32, obj.geometry.heightSegments || 32);
                 mesh = new THREE.Mesh(geometry, material);
                 break;
-                
             case 'box':
-                geometry = new THREE.BoxGeometry(
-                    obj.geometry.width || 100,
-                    obj.geometry.height || 100,
-                    obj.geometry.depth || 100
-                );
+                geometry = new THREE.BoxGeometry(obj.geometry.width || 100, obj.geometry.height || 100, obj.geometry.depth || 100);
                 mesh = new THREE.Mesh(geometry, material);
                 break;
-            
              case 'cylinder':
-                geometry = new THREE.CylinderGeometry(
-                    obj.geometry.radiusTop || 50,
-                    obj.geometry.radiusBottom || 50,
-                    obj.geometry.height || 100,
-                    obj.geometry.radialSegments || 32
-                );
+                geometry = new THREE.CylinderGeometry(obj.geometry.radiusTop || 50, obj.geometry.radiusBottom || 50, obj.geometry.height || 100, obj.geometry.radialSegments || 32);
                 mesh = new THREE.Mesh(geometry, material);
                 break;
-            
-            // --- ¡NUEVO TIPO AÑADIDO! ---
             case 'cone':
-                geometry = new THREE.ConeGeometry(
-                    obj.geometry.radius || 5, // radio base
-                    obj.geometry.height || 10, // altura
-                    obj.geometry.radialSegments || 8 // pocos segmentos para pinchos
-                );
+                geometry = new THREE.ConeGeometry(obj.geometry.radius || 5, obj.geometry.height || 10, obj.geometry.radialSegments || 8);
                 mesh = new THREE.Mesh(geometry, material);
                 break;
-                
             default:
                 console.warn(`Tipo de objeto 3D desconocido: ${obj.type}`);
                 continue;
         }
         
-        // 3. Aplicar posición Y ESCALADO (¡MODIFICADO!)
         if (mesh) {
-            // Aplicar posición
-            mesh.position.set(
-                obj.position.x || 0,
-                obj.position.y || 0,
-                obj.position.z || 0
-            );
-
-            // ¡NUEVO! Aplicar escalado si existe
+            mesh.position.set(obj.position.x || 0, obj.position.y || 0, obj.position.z || 0);
             if (obj.scale) {
-                mesh.scale.set(
-                    obj.scale.x || 1,
-                    obj.scale.y || 1,
-                    obj.scale.z || 1
-                );
+                mesh.scale.set(obj.scale.x || 1, obj.scale.y || 1, obj.scale.z || 1);
             }
-
             group.add(mesh);
         }
-    } // Fin del bucle for
+    }
 
     // --- PASO 3: Centrar el grupo ---
     const box = new THREE.Box3().setFromObject(group);
     const center = box.getCenter(new THREE.Vector3());
-    group.position.sub(center); // Centrar en el origen
+    group.position.sub(center);
 
     // --- PASO 4: Exportar a GLTF ---
     const exportScene = new THREE.Scene();
     exportScene.add(group);
-
     const exporter = new GLTFExporter();
     
     return new Promise((resolve, reject) => {
@@ -438,49 +407,85 @@ export async function generate3DModel(svgContent, prompt, model) {
             exportScene,
             (gltfJson) => {
                 console.log("Exportación a GLTF completa.");
-                resolve(gltfJson); // Devuelve el JSON del GLTF
+                // ¡DEVOLVEMOS AMBAS COSAS!
+                resolve({ 
+                    gltfJson: gltfJson,             // El modelo 3D
+                    sceneDescription: aiParams    // Las instrucciones que lo crearon
+                });
             },
             (error) => {
                 console.error('Error al exportar a GLTF:', error);
                 reject(error);
             },
-            { binary: false } // Exportar como JSON
+            { binary: false } 
         );
     });
 }
 
+
+// --- ¡FUNCIÓN DE GENERACIÓN MODIFICADA! ---
 /**
- * Flujo para editar un modelo 3D existente.
- * (Esta función no necesita cambios, ya que llama al
- * 'generate3DModel' actualizado, heredando las mejoras).
- * @param {object} modelData - El modelo GLTF JSON actual.
- * @param {string} sourceSvgContent - El SVG 2D original del que provino.
+ * Flujo principal para generar un modelo 3D desde un SVG.
+ * @param {string} svgContent - El código SVG.
+ * @param {string} prompt - El prompt del usuario.
+ * @param {string} model - El modelo de IA a utilizar.
+ * @returns {Promise<{gltfJson: object, sceneDescription: object}>}
+ */
+export async function generate3DModel(svgContent, prompt, model) {
+    console.log(`Iniciando generación 3D con ${model}...`, { prompt });
+    
+    const svgStructure = analyzeSvgStructureSimple(svgContent);
+    const svgStructureJson = svgStructure ? JSON.stringify(svgStructure) : null;
+    
+    // --- PASO 1: Llamar a la IA para obtener la DESCRIPCIÓN DE ESCENA ---
+    let aiParams;
+    try {
+        const apiPrompt = create3DScenePrompt(svgContent, svgStructureJson, prompt);
+        aiParams = await callGenerativeApi(apiPrompt, model, true); // true = esperar JSON
+        console.log("Descripción de escena 3D recibida de la IA:", aiParams);
+        
+        if (!aiParams || !aiParams.objects || !Array.isArray(aiParams.objects)) {
+            throw new Error("La IA devolvió un JSON de descripción de escena inválido.");
+        }
+    } catch (error) {
+        console.error("Error al llamar a la IA para parámetros 3D:", error);
+        throw new Error(`Error de la IA: ${error.message}`);
+    }
+
+    // --- PASOS 2, 3 y 4: Construir y Exportar (usando la nueva función interna) ---
+    return _buildSceneAndExport(aiParams, svgContent);
+}
+
+// --- ¡FUNCIÓN DE EDICIÓN MODIFICADA (REFINAMIENTO)! ---
+/**
+ * Flujo para editar un modelo 3D existente de forma iterativa.
+ * @param {object} previousSceneDescription - El JSON de descripción de escena { objects: [...] } anterior.
+ * @param {string} sourceSvgContent - El SVG 2D original (necesario por si la IA mantiene un 'extrude_svg').
  * @param {string} prompt - El prompt de edición.
  * @param {string} model - El modelo de IA a utilizar.
- * @returns {Promise<object>} El nuevo modelo GLTF JSON.
+ * @returns {Promise<{gltfJson: object, sceneDescription: object}>} El nuevo modelo GLTF JSON y su descripción.
  */
-export async function edit3DModel(modelData, sourceSvgContent, prompt, model) {
-    console.log(`Iniciando edición 3D con ${model}...`, { prompt });
+export async function edit3DModel(previousSceneDescription, sourceSvgContent, prompt, model) {
+    console.log(`Iniciando edición 3D ITERATIVA con ${model}...`, { prompt });
     
-    // La "edición" real es muy compleja.
-    // Por ahora, re-generamos el modelo usando el SVG ORIGINAL
-    // y el NUEVO prompt de edición.
-    
-    console.log("Re-generando el modelo 3D basado en el SVG original y el nuevo prompt...");
-
-    if (!sourceSvgContent) {
-        console.error("Error en edit3DModel: No se proporcionó el sourceSvgContent.");
-        throw new Error("No se encontró el SVG 2D original para la edición.");
+    // --- PASO 1: Llamar a la IA para obtener la NUEVA DESCRIPCIÓN DE ESCENA ---
+    let newAiParams;
+    try {
+        const apiPrompt = create3DRefinementPrompt(previousSceneDescription, prompt);
+        newAiParams = await callGenerativeApi(apiPrompt, model, true); // true = esperar JSON
+        console.log("NUEVA descripción de escena 3D (refinada) recibida:", newAiParams);
+        
+        if (!newAiParams || !newAiParams.objects || !Array.isArray(newAiParams.objects)) {
+            throw new Error("La IA devolvió un JSON de refinamiento inválido.");
+        }
+    } catch (error) {
+        console.error("Error al llamar a la IA para refinamiento 3D:", error);
+        throw new Error(`Error de la IA: ${error.message}`);
     }
-    
-    // Usamos el flujo de generación real, que AHORA incluye el análisis estructural.
-    const newModel = await generate3DModel(
-        sourceSvgContent, // <-- ¡Usa el SVG real!
-        prompt,           // El nuevo prompt de edición
-        model             // El modelo de IA seleccionado
-    );
-    
-    return newModel;
+
+    // --- PASOS 2, 3 y 4: Re-Construir y Exportar con la NUEVA descripción ---
+    // Pasamos el SVG original por si la IA decide mantener o añadir un 'extrude_svg'.
+    return _buildSceneAndExport(newAiParams, sourceSvgContent);
 }
 
  

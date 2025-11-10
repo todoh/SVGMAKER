@@ -39,12 +39,11 @@ export async function callGenerativeApi(prompt, model = 'gemini-2.5-flash-previe
     // NUEVA LÓGICA DE ROTACIÓN Y REINTENTOS
     // =================================================================
     
+    const MAX_RETRY_ATTEMPTS = 3; // Límite de 3 intentos totales (1 inicial + 2 reintentos).
     let currentKey = getCurrentKey(); // Key inicial
-    const totalKeys = getKeyCount();
-    let attemptCount = 0; // Contará los intentos fallidos por 429
 
-    // Intentaremos una vez por cada key disponible.
-    while (attemptCount < totalKeys) {
+    // Bucle para un máximo de 3 intentos
+    for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
         
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
 
@@ -83,19 +82,18 @@ export async function callGenerativeApi(prompt, model = 'gemini-2.5-flash-previe
             } // Fin de if (response.ok)
 
             // --- CASO 2: ERROR 429 (Too Many Requests) ---
-            // ¡Rotamos la key y reintentamos!
             if (response.status === 429) {
-                console.warn(`[APISistema] Error 429 (Límite de peticiones) con la key [${currentKey.substring(0, 4)}...]. Rotando...`);
-                attemptCount++;
+                console.warn(`[APISistema] Intento ${attempt}/${MAX_RETRY_ATTEMPTS} falló (Error 429) con la key [${currentKey.substring(0, 4)}...].`);
                 
-                if (attemptCount >= totalKeys) {
-                    // Este fue el último intento, ya probamos todas las keys.
-                    throw new Error("Todas las API Keys han fallado por error 429 (Límite de peticiones). Reintenta más tarde.");
+                if (attempt === MAX_RETRY_ATTEMPTS) {
+                    // Este fue el último intento.
+                    throw new Error(`Se superó el límite de ${MAX_RETRY_ATTEMPTS} reintentos por error 429.`);
                 }
                 
                 // Obtenemos la siguiente key y continuamos el bucle
+                console.log("[APISistema] Rotando key para el siguiente reintento...");
                 currentKey = rotateAndGetNextKey();
-                continue; // Vuelve al inicio del 'while' con la nueva key
+                continue; // Vuelve al inicio del 'for' con la nueva key
             }
 
             // --- CASO 3: OTRO ERROR (400, 500, 403...) ---
@@ -108,7 +106,7 @@ export async function callGenerativeApi(prompt, model = 'gemini-2.5-flash-previe
             // --- CASO 4: ERROR DE RED O ERROR YA LANZADO ---
             
             // Si el error ya es uno de los que lanzamos nosotros, solo lo relanzamos.
-            if (error.message.startsWith("Todas las API Keys") || 
+            if (error.message.startsWith("Se superó el límite") || 
                 error.message.startsWith("Error en la API:") ||
                 error.message.startsWith("La API devolvió un JSON inválido") ||
                 error.message.startsWith("Respuesta inválida")) 
@@ -116,13 +114,13 @@ export async function callGenerativeApi(prompt, model = 'gemini-2.5-flash-previe
                 throw error;
             }
 
-            // Si es un error de red (ej. 'Failed to fetch'), no rotamos.
+            // Si es un error de red (ej. 'Failed to fetch'), no rotamos y lanzamos error fatal.
             console.error("Error de Red o Fetch en callGenerativeApi:", error);
             throw new Error(`Error de red o fetch (ver consola): ${error.message}`);
         }
-    } // Fin del while
+    } // Fin del for loop
     
-    // Esta línea solo se alcanzaría si totalKeys es 0, lo cual ya se controla al inicio.
+    // Esta línea solo se alcanzaría si MAX_RETRY_ATTEMPTS es 0
     throw new Error("Ha ocurrido un error inesperado en el bucle de reintentos.");
 }
 

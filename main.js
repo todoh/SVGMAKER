@@ -8,6 +8,7 @@
 
 import { initApiKeys } from './apisistema.js';
 import { generarImagenDesdePrompt } from './svggeneracion.js'; // Importación actualizada
+import { generarImagenRealistaDesdePrompt } from './generadorrealista.js'; // <-- NUEVA IMPORTACIÓN
 import { mejorarImagenDesdeSVG } from './svgmejora.js';
 import { manipulateViewBox } from './svgmanual.js';
 import { makeSvgInteractive, deleteSelectedElement, clearSelection, deactivateSvgInteraction } from './svginteract.js';
@@ -20,8 +21,8 @@ let currentSelectedId = null;
 let currentMode = 'none'; // 'none', '2d', '3d'
 
 // --- Referencias a elementos DOM ---
-let apiKeyInput, promptInput, generateButton,
-    copySvgButton, downloadSvgButton, // <-- AÑADIDA downloadSvgButton
+let apiKeyInput, promptInput, generateButton, generateRealisticButton, // <-- AÑADIDO
+    copySvgButton, downloadSvgButton,
     previewArea, statusMessage, loader,
     modelSelect, galleryGrid, downloadGalleryButton, uploadGalleryInput,
     improveModal, modalItemName, modalImprovePrompt,
@@ -34,7 +35,7 @@ let apiKeyInput, promptInput, generateButton,
 
 // --- NUEVAS REFERENCIAS DOM 3D (MODIFICADAS) ---
 let controls3DSection, prompt3D, generate3DButton, edit3DButton,
-    copy3DModelButton, download3DModelButton; // <-- AÑADIDO download3DModelButton
+    copy3DModelButton, download3DModelButton;
 
 
 // --- Funciones de la UI ---
@@ -65,7 +66,7 @@ function showStatus(message, isError = false) {
 }
 
 /**
- * Muestra el editor 2D (SVG) en la vista previa.
+ * Muestra el editor 2D (SVG o PNG) en la vista previa.
  * @param {object} item - El item de la galería.
  */
 function showResultInPreview(item) {
@@ -76,41 +77,72 @@ function showResultInPreview(item) {
     currentMode = '2d';
     currentSelectedId = id;
 
-    // 2. Parsear y mostrar el SVG
-    let svgElement;
-    try {
-        const doc = new DOMParser().parseFromString(svgContent, "image/svg+xml");
-        svgElement = doc.documentElement;
-        if (svgElement.tagName === 'parsererror' || !svgElement) {
-            throw new Error('Error al parsear el SVG.');
+    // ==================
+    //  CAMBIO AQUÍ: Detectar si es PNG o SVG
+    // ==================
+    if (svgContent.startsWith('data:image/png')) {
+        // --- ES UN PNG REALISTA ---
+        const img = document.createElement('img');
+        img.src = svgContent;
+        img.alt = item.name;
+        previewArea.appendChild(img);
+
+        // Mostrar solo el botón de descarga
+        actionsSection.classList.remove('hidden');
+        downloadSvgButton.textContent = "Descargar PNG"; // Cambiar texto del botón
+        
+        // Ocultar todos los demás controles
+        copySvgButton.classList.add('hidden');
+        deleteShapeButton.classList.add('hidden');
+        svgCodeWrapper.classList.add('hidden');
+        manualControls.classList.add('hidden');
+        controls3DSection.classList.add('hidden'); // No se puede generar 3D desde un PNG
+
+    } else {
+        // --- ES UN SVG ---
+        let svgElement;
+        try {
+            const doc = new DOMParser().parseFromString(svgContent, "image/svg+xml");
+            svgElement = doc.documentElement;
+            if (svgElement.tagName === 'parsererror' || !svgElement) {
+                throw new Error('Error al parsear el SVG.');
+            }
+        } catch (e) {
+            console.error("Error parseando SVG:", e);
+            showStatus("Error: El SVG está corrupto.", true);
+            previewArea.innerHTML = "<p>Error: SVG corrupto.</p>";
+            return;
         }
-    } catch (e) {
-        console.error("Error parseando SVG:", e);
-        showStatus("Error: El SVG está corrupto.", true);
-        previewArea.innerHTML = "<p>Error: SVG corrupto.</p>";
-        return;
+
+        // 3. Añadir el elemento SVG al DOM y hacerlo interactivo
+        previewArea.appendChild(svgElement);
+        makeSvgInteractive(svgElement, (updatedSvgString) => {
+            updateGalleryItem(currentSelectedId, { svgContent: updatedSvgString });
+            svgCode.textContent = updatedSvgString;
+        });
+
+        // 4. Mostrar UI 2D (SVG)
+        svgCode.textContent = svgContent;
+        actionsSection.classList.remove('hidden');
+        svgCodeWrapper.classList.remove('hidden');
+        manualControls.classList.remove('hidden');
+        
+        // Mostrar botones de SVG
+        downloadSvgButton.textContent = "Descargar SVG";
+        copySvgButton.classList.remove('hidden');
+        deleteShapeButton.classList.remove('hidden');
+        
+        // 5. Mostrar UI 3D (para permitir la generación desde 2D)
+        controls3DSection.classList.remove('hidden');
+        prompt3D.value = ""; // Limpiar el prompt 3D
+        copy3DModelButton.classList.add('hidden');
+        download3DModelButton.classList.add('hidden');
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
 
-    // 3. Añadir el elemento SVG al DOM y hacerlo interactivo
-    previewArea.appendChild(svgElement);
-    makeSvgInteractive(svgElement, (updatedSvgString) => {
-        updateGalleryItem(currentSelectedId, { svgContent: updatedSvgString });
-        svgCode.textContent = updatedSvgString;
-    });
-
-    // 4. Mostrar UI 2D
-    svgCode.textContent = svgContent;
-    actionsSection.classList.remove('hidden');
-    svgCodeWrapper.classList.remove('hidden');
-    manualControls.classList.remove('hidden');
-    
-    // 5. Mostrar UI 3D (para permitir la generación desde 2D)
-    controls3DSection.classList.remove('hidden');
-    prompt3D.value = ""; // Limpiar el prompt 3D
-    copy3DModelButton.classList.add('hidden'); // Ocultar botón de copia 3D
-    download3DModelButton.classList.add('hidden'); // <-- AÑADIDO (Ocultar botón de descarga 3D)
-    
-    // 6. Resaltar en galería
+    // 6. Resaltar en galería (común a ambos)
     highlightGalleryItem(id);
 }
 
@@ -118,7 +150,7 @@ function showResultInPreview(item) {
  * Muestra el visor 3D en la vista previa.
  * @param {object} item - El item de la galería (debe tener .model3d).
  */
-async function show3DModelInPreview(item) { // <-- 1. AÑADIR 'async'
+async function show3DModelInPreview(item) {
     const { model3d, id, name } = item;
 
     // 1. Limpiar CUALQUER visor anterior (2D o 3D)
@@ -132,27 +164,29 @@ async function show3DModelInPreview(item) { // <-- 1. AÑADIR 'async'
         
         // 3. Renderizar el modelo
         if (model3d && model3d.data) {
-            await renderModel(model3d.data); // <-- 2. AÑADIR 'await'
-            prompt3D.value = model3d.prompt || ""; // Cargar el prompt que lo generó
+            await renderModel(model3d.data);
+            prompt3D.value = model3d.prompt || "";
         } else {
             throw new Error("El item no contiene datos de modelo 3D válidos.");
         }
     } catch (e) {
-        console.error("Error al inicializar o renderizar el visor 3D:", e); // <-- Error mejorado
+        console.error("Error al inicializar o renderizar el visor 3D:", e);
         showStatus("Error al mostrar el modelo 3D.", true);
         previewArea.innerHTML = "<p>Error al mostrar el modelo 3D.</p>";
         return;
     }
     
-    // ... (el resto de la función sigue igual) ...
+    // 4. Mostrar UI 3D
     controls3DSection.classList.remove('hidden');
     copy3DModelButton.classList.remove('hidden'); 
     download3DModelButton.classList.remove('hidden'); 
     
+    // 5. Ocultar UI 2D
     actionsSection.classList.add('hidden');
     svgCodeWrapper.classList.add('hidden');
     manualControls.classList.add('hidden');
     
+    // 6. Resaltar en galería
     highlightGalleryItem(id);
 }
 
@@ -261,16 +295,31 @@ function renderGallery() {
                 <img src="https://placehold.co/100x100/fecaca/dc2626?text=Error" alt="Error de generación">
                 <p class="gallery-item-name">${item.name}</p>
             `;
-        } else if (item.svgContent) { // --- ES UN ITEM 2D ---
-            const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(item.svgContent);
+        } else if (item.svgContent) { 
+            // ==================
+            //  CAMBIO AQUÍ: Detectar PNG en galería
+            // ==================
+            let imageTag;
+            if (item.svgContent.startsWith('data:image/png')) {
+                // Es un PNG
+                imageTag = `<img src="${item.svgContent}" alt="${item.name}">`;
+            } else {
+                // Es un SVG
+                const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(item.svgContent);
+                imageTag = `<img src="${svgDataUrl}" alt="${item.name}">`;
+            }
+
             itemEl.innerHTML = `
                 <div class="gallery-item-actions">
                     <button class="gallery-item-btn edit" data-action="edit" title="Editar">✏️</button>
                     <button class="gallery-item-btn delete" data-action="delete" title="Eliminar">❌</button>
                 </div>
-                <img src="${svgDataUrl}" alt="${item.name}">
+                ${imageTag}
                 <p class="gallery-item-name">${item.name}</p>
             `;
+            // ==================
+            //  FIN DEL CAMBIO
+            // ==================
         } else if (item.model3d) { // --- ES UN ITEM 3D ---
             // Usamos un placeholder para el 3D
             const placeholder = `https://placehold.co/100x100/374151/e5e7eb?text=3D`;
@@ -331,54 +380,143 @@ function updateGalleryItem(id, updates) {
  * Inicia la generación de un nuevo SVG y lo añade a la cola.
  */
 function handleGenerate() {
-    const prompt = promptInput.value;
+    const fullInput = promptInput.value;
     const key = apiKeyInput.value;
     const selectedModel = modelSelect.value;
 
-    if (!prompt) {
+    const prompts = fullInput.split('@')
+                             .map(p => p.trim())
+                             .filter(p => p.length > 0);
+
+    if (prompts.length === 0) {
         showStatus("Por favor, ingresa un prompt principal.", true);
         return;
     }
+
     if (!key) {
         showStatus("Por favor, ingresa tu API Key.", true);
         return;
     }
 
-    generateButton.disabled = true; // Deshabilita temporalmente
-    showStatus("Añadido a la cola de generación...", false);
+    generateButton.disabled = true;
+    generateRealisticButton.disabled = true; // <-- Deshabilitar ambos
     
-    const newItem = {
-        id: Date.now().toString(),
-        name: prompt.substring(0, 30) + '...' || 'Nuevo SVG',
-        prompt: prompt,
-        status: 'pending',
-    };
-
-    addToGallery(newItem);
-    promptInput.value = ""; 
-
-    // =================================================================
-    // ¡CORRECCIÓN! Habilitamos el botón DE NUEVO inmediatamente
-    // para permitir añadir más items a la cola.
-    // =================================================================
+    const statusMessage = prompts.length === 1 
+        ? "Añadido 1 item SVG a la cola..."
+        : `Añadidos ${prompts.length} items SVG a la cola...`;
+    showStatus(statusMessage, false);
+    
+    promptInput.value = "";
     generateButton.disabled = false;
+    generateRealisticButton.disabled = false; // <-- Rehabilitar ambos
 
-    (async () => {
-        try {
-            // Usamos la nueva función de svggeneracion.js
-            const result = await generarImagenDesdePrompt(prompt, selectedModel);
-            updateGalleryItem(newItem.id, {
-                svgContent: result.svgContent,
-                status: 'completed'
-            });
-        } catch (error) {
-            console.error("Error en handleGenerate (background):", error);
-            showStatus(`Error al generar: ${error.message}`, true);
-            updateGalleryItem(newItem.id, { status: 'error', name: 'Error de Generación' });
-        }
-        // Ya no es necesario habilitar el botón aquí
-    })();
+    const baseTimestamp = Date.now();
+
+    prompts.forEach((prompt, index) => {
+        
+        const newItem = {
+            id: `${baseTimestamp}-${index}`,
+            name: prompt.substring(0, 30) + '...' || 'Nuevo SVG',
+            prompt: prompt,
+            status: 'pending',
+            isRealistic: false // <-- Flag
+        };
+
+        addToGallery(newItem);
+
+        (async () => {
+            try {
+                const result = await generarImagenDesdePrompt(prompt, selectedModel);
+                
+                updateGalleryItem(newItem.id, {
+                    svgContent: result.svgContent,
+                    status: 'completed'
+                });
+            } catch (error) {
+                console.error(`Error en handleGenerate (SVG) for prompt "${prompt}":`, error);
+                showStatus(`Error al generar SVG "${prompt.substring(0, 15)}...": ${error.message}`, true);
+                
+                updateGalleryItem(newItem.id, { 
+                    status: 'error', 
+                    name: 'Error de Generación' 
+                });
+            }
+        })();
+    });
 }
+
+/**
+ * =================================================================
+ * NUEVA FUNCIÓN: Generar Imagen Realista
+ * =================================================================
+ */
+function handleGenerateRealistic() {
+    const fullInput = promptInput.value;
+    const key = apiKeyInput.value;
+    // El modelo se maneja dentro de generadorrealista.js
+
+    const prompts = fullInput.split('@')
+                             .map(p => p.trim())
+                             .filter(p => p.length > 0);
+
+    if (prompts.length === 0) {
+        showStatus("Por favor, ingresa un prompt principal.", true);
+        return;
+    }
+
+    if (!key) {
+        showStatus("Por favor, ingresa tu API Key.", true);
+        return;
+    }
+
+    generateButton.disabled = true; // <-- Deshabilitar ambos
+    generateRealisticButton.disabled = true;
+    
+    const statusMessage = prompts.length === 1 
+        ? "Añadido 1 item Realista a la cola..."
+        : `Añadidos ${prompts.length} items Realistas a la cola...`;
+    showStatus(statusMessage, false);
+    
+    promptInput.value = "";
+    generateButton.disabled = false; // <-- Rehabilitar ambos
+    generateRealisticButton.disabled = false;
+
+    const baseTimestamp = Date.now();
+
+    prompts.forEach((prompt, index) => {
+        
+        const newItem = {
+            id: `${baseTimestamp}-${index}`,
+            name: prompt.substring(0, 30) + '...' || 'Nueva Imagen Realista',
+            prompt: prompt,
+            status: 'pending',
+            isRealistic: true // <-- Flag
+        };
+
+        addToGallery(newItem);
+
+        (async () => {
+            try {
+                // Usamos la nueva función del nuevo archivo
+                const pngDataUrl = await generarImagenRealistaDesdePrompt(prompt);
+                
+                updateGalleryItem(newItem.id, {
+                    svgContent: pngDataUrl, // Guardamos la Data URL del PNG aquí
+                    status: 'completed'
+                });
+            } catch (error) {
+                console.error(`Error en handleGenerateRealistic for prompt "${prompt}":`, error);
+                showStatus(`Error al generar Realista "${prompt.substring(0, 15)}...": ${error.message}`, true);
+                
+                updateGalleryItem(newItem.id, { 
+                    status: 'error', 
+                    name: 'Error de Generación' 
+                });
+            }
+        })();
+    });
+}
+
 
  
 /**
@@ -386,16 +524,16 @@ function handleGenerate() {
  * Decide si mostrar el editor 2D o el visor 3D.
  * @param {object} item - El item de la galería clickeado.
  */
-async function handleGalleryItemClick(item) { // <-- 1. AÑADIR 'async'
+async function handleGalleryItemClick(item) {
     if (item.status !== 'completed') return;
     if (currentSelectedId === item.id) return; // Ya seleccionado
 
     if (item.svgContent) {
-        // Es un SVG, mostrar editor 2D
+        // Es un SVG o PNG, mostrar editor 2D
         showResultInPreview(item);
     } else if (item.model3d) {
         // Es un modelo 3D, mostrar visor 3D
-        await show3DModelInPreview(item); // <-- 2. AÑADIR 'await'
+        await show3DModelInPreview(item);
     }
 }
 /**
@@ -415,15 +553,21 @@ function handleGalleryEditClick(item) {
     modalImprovePrompt.value = ""; 
     
     // 3. Mostrar/Ocultar campos según el tipo
-    if (item.svgContent) {
-        // Es 2D
+    // ==================
+    //  CAMBIO AQUÍ: Ocultar mejora si es PNG
+    // ==================
+    if (item.svgContent && !item.svgContent.startsWith('data:image/png')) {
+        // Es 2D SVG
         modalImproveSection.style.display = 'block';
         modalImproveConfirm.style.display = 'block';
     } else {
-        // Es 3D
+        // Es 3D o 2D PNG
         modalImproveSection.style.display = 'none';
         modalImproveConfirm.style.display = 'none';
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
 
     improveModal.classList.remove('hidden');
     
@@ -456,7 +600,7 @@ function handleGalleryDeleteClick(item) {
 
 
 /**
- * Maneja el click en el botón de "Mejorar" dentro del modal (SOLO 2D).
+ * Maneja el click en el botón de "Mejorar" dentro del modal (SOLO 2D SVG).
  */
 async function handleImprove() {
     const improvePrompt = modalImprovePrompt.value;
@@ -466,10 +610,17 @@ async function handleImprove() {
     const itemIdToImprove = currentSelectedId;
     const originalItem = svgGallery.find(i => i.id === itemIdToImprove);
 
-    if (!originalItem || !originalItem.svgContent) { // Asegura que es 2D
-        showStatus("Error: No se encontró el item 2D seleccionado.", true);
+    // ==================
+    //  CAMBIO AQUÍ: Asegurar que es un SVG
+    // ==================
+    if (!originalItem || !originalItem.svgContent || originalItem.svgContent.startsWith('data:image/png')) {
+        showStatus("Error: No se encontró el item SVG seleccionado para mejorar.", true);
         return;
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
+
 
     // --- Caso 1: Solo renombrar (Sincrónico) ---
     if (!improvePrompt) {
@@ -495,7 +646,6 @@ async function handleImprove() {
         clearPreview();
     }
 
-    // (Esta función no deshabilita botones globales, así que está bien)
     (async () => {
         try {
             const result = await mejorarImagenDesdeSVG(originalSvgContent, improvePrompt, selectedModel);
@@ -659,10 +809,18 @@ function handleRenameSave() {
  */
 function handleCopySvg() {
     const item = svgGallery.find(i => i.id === currentSelectedId);
-    if (currentMode !== '2d' || !item || !item.svgContent) {
-        showStatus("No hay código SVG para copiar (solo 2D).", true);
+    
+    // ==================
+    //  CAMBIO AQUÍ: No copiar si es PNG
+    // ==================
+    if (currentMode !== '2d' || !item || !item.svgContent || item.svgContent.startsWith('data:image/png')) {
+        showStatus("No hay código SVG para copiar (solo 2D SVG).", true);
         return;
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
+
 
     const textarea = document.createElement('textarea');
     textarea.value = item.svgContent;
@@ -763,49 +921,54 @@ function handleDownloadGallery() {
     
     showStatus("Galería JSON descargada.", false);
 }
+
 /**
- * =================================================================
- * AÑADIDA ESTA NUEVA FUNCIÓN
- * =================================================================
- * Descarga el SVG seleccionado como un archivo .svg.
+ * Descarga el SVG o PNG seleccionado como un archivo.
  */
 function handleDownloadSvg() {
     const item = svgGallery.find(i => i.id === currentSelectedId);
     if (currentMode !== '2d' || !item || !item.svgContent) {
-        showStatus("No hay SVG para descargar.", true);
+        showStatus("No hay nada seleccionado para descargar.", true);
         return;
     }
 
     try {
-        // 1. Obtener el contenido SVG
-        const svgString = item.svgContent;
-
-        // 2. Crear un Blob
-        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-
-        // 3. Crear una URL para el Blob
-        const url = URL.createObjectURL(blob);
-
-        // 4. Crear un enlace de descarga
         const a = document.createElement('a');
-        a.href = url;
+        const fileNameBase = (item.name || 'dibujo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-        // 5. Crear un nombre de archivo
-        const fileName = (item.name || 'dibujo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${fileName}.svg`;
+        // ==================
+        //  CAMBIO AQUÍ: Manejar descarga de PNG
+        // ==================
+        if (item.svgContent.startsWith('data:image/png')) {
+            // --- ES UN PNG ---
+            a.href = item.svgContent;
+            a.download = `${fileNameBase}.png`;
+        } else {
+            // --- ES UN SVG ---
+            const svgString = item.svgContent;
+            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            a.href = url;
+            a.download = `${fileNameBase}.svg`;
+            
+            // Limpiar la URL del blob después de la descarga
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        // ==================
+        //  FIN DEL CAMBIO
+        // ==================
 
-        // 6. Simular click
+        // Simular click
         document.body.appendChild(a);
         a.click();
 
-        // 7. Limpiar
+        // Limpiar
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
 
-        showStatus("SVG descargado.", false);
+        showStatus("Descarga iniciada.", false);
 
     } catch (err) {
-        console.error('Error al descargar SVG:', err);
+        console.error('Error al descargar:', err);
         showStatus("Error al descargar. Revisa la consola.", true);
     }
 }
@@ -813,7 +976,7 @@ function handleDownloadSvg() {
 /**
  * Descarga el modelo 3D (GLTF JSON) actual como un archivo.
  */
-async function handleDownload3DModel() { // <-- Convertida a async
+async function handleDownload3DModel() {
     const item = svgGallery.find(i => i.id === currentSelectedId);
 
     if (currentMode !== '3d' || !item || !item.model3d) {
@@ -822,52 +985,44 @@ async function handleDownload3DModel() { // <-- Convertida a async
     }
 
     showStatus("Preparando descarga GLB...", false);
-    download3DModelButton.disabled = true; // Deshabilitar mientras se procesa
+    download3DModelButton.disabled = true;
 
     try {
-        // 1. Llamar a la nueva función de exportación
-        const glbData = await exportSceneToGLB(); // Esto es un ArrayBuffer
-
-        // 2. Crear un Blob (archivo en memoria)
-        // El MIME type para GLB es 'model/gltf-binary'
+        const glbData = await exportSceneToGLB(); 
         const blob = new Blob([glbData], { type: 'model/gltf-binary' });
-
-        // 3. Crear una URL para el Blob
         const url = URL.createObjectURL(blob);
-
-        // 4. Crear un enlace de descarga (<a>)
         const a = document.createElement('a');
-        a.href = url;
-
-        // 5. Crear un nombre de archivo (ej: mi_modelo_3d.glb)
         const fileName = (item.name || 'modelo_3d').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${fileName}.glb`; // <-- ¡Extensión .glb!
-
-        // 6. Simular un click en el enlace
+        a.download = `${fileName}.glb`;
+        a.href = url;
         document.body.appendChild(a);
         a.click();
-
-        // 7. Limpiar
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-
         showStatus("Modelo 3D (.glb) descargado.", false);
 
     } catch (err) {
         console.error('Error al descargar GLB:', err);
         showStatus("Error al descargar el GLB. Revisa la consola.", true);
     } finally {
-        download3DModelButton.disabled = false; // Rehabilitar el botón
+        download3DModelButton.disabled = false;
     }
 }
 /**
- * Maneja el click en el botón "Eliminar Forma" (SOLO 2D).
+ * Maneja el click en el botón "Eliminar Forma" (SOLO 2D SVG).
  */
 function handleDeleteShape() {
-    if (currentMode !== '2d' || !currentSelectedId) {
-        showStatus("Esta acción solo está disponible en el modo 2D.", true);
+    // ==================
+    //  CAMBIO AQUÍ: Validar que sea un SVG
+    // ==================
+    const item = svgGallery.find(i => i.id === currentSelectedId);
+    if (currentMode !== '2d' || !item || item.svgContent.startsWith('data:image/png')) {
+        showStatus("Esta acción solo está disponible en el modo de edición de SVG 2D.", true);
         return;
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
     
     if (deleteSelectedElement()) {
         showStatus("Forma eliminada.", false);
@@ -881,7 +1036,6 @@ function handleDeleteShape() {
 
 /**
  * Inicia la generación de un modelo 3D desde el SVG actual.
- * ¡MODIFICADO! Ahora es asíncrono y usa la cola.
  */
 function handleGenerate3D() {
     const svgItem = svgGallery.find(i => i.id === currentSelectedId);
@@ -892,28 +1046,34 @@ function handleGenerate3D() {
         showStatus("Error: No hay ningún modelo de IA seleccionado.", true);
         return;
     }
-    if (currentMode !== '2d' || !svgItem) {
+
+    // ==================
+    //  CAMBIO AQUÍ: Validar que sea un SVG
+    // ==================
+    if (currentMode !== '2d' || !svgItem || (svgItem.svgContent && svgItem.svgContent.startsWith('data:image/png'))) {
         showStatus("Por favor, selecciona un dibujo SVG 2D primero.", true);
         return;
     }
+    // ==================
+    //  FIN DEL CAMBIO
+    // ==================
+
     if (!prompt) {
         showStatus("Por favor, ingresa un prompt 3D (Ej: 'hazlo de metal rojo').", true);
         return;
     }
 
-    generate3DButton.disabled = true; // Deshabilita temporalmente
+    generate3DButton.disabled = true; 
     edit3DButton.disabled = true;
-    copy3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
-    download3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
+    copy3DModelButton.disabled = true; 
+    download3DModelButton.disabled = true; 
     
     showStatus("Añadido a la cola de generación 3D...", false);
 
-    // Crear un NUEVO item en la galería para el modelo 3D
     const newItem = {
         id: Date.now().toString(),
         name: svgItem.name + " (3D)",
-        status: 'pending', // ¡Estado pendiente!
-        // Guardamos los datos necesarios para la tarea asíncrona
+        status: 'pending',
         _sourceSvgContent: svgItem.svgContent,
         _prompt3D: prompt,
         _model: selectedModel,
@@ -921,37 +1081,30 @@ function handleGenerate3D() {
     };
 
     addToGallery(newItem);
-    
-    // Limpiamos el prompt 3D
     prompt3D.value = "";
 
-    // =================================================================
-    // ¡CORRECCIÓN! Habilitamos los botones DE NUEVO inmediatamente
-    // =================================================================
     generate3DButton.disabled = false;
     edit3DButton.disabled = false;
-    copy3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
-    download3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
+    copy3DModelButton.disabled = false;
+    download3DModelButton.disabled = false;
 
 
-    // --- Iniciar tarea asíncrona ---
     (async () => {
         try {
-            const modelData = await generate3DModel(
+            const result = await generate3DModel(
                 newItem._sourceSvgContent, 
                 newItem._prompt3D, 
                 newItem._model
             );
 
-            // Actualizar el item 'pending' con el resultado
             updateGalleryItem(newItem.id, {
                 status: 'completed',
                 model3d: {
-                    data: modelData,
+                    data: result.gltfJson,
+                    sceneDescription: result.sceneDescription,
                     prompt: newItem._prompt3D,
                     sourceSvgId: newItem._sourceSvgId
                 },
-                // Limpiar datos temporales
                 _sourceSvgContent: undefined,
                 _prompt3D: undefined,
                 _model: undefined
@@ -960,7 +1113,6 @@ function handleGenerate3D() {
         } catch (error) {
             console.error("Error en handleGenerate3D (background):", error);
             showStatus(`Error al generar 3D: ${error.message}`, true);
-            // Actualizar item a 'error'
             updateGalleryItem(newItem.id, { 
                 status: 'error', 
                 name: 'Error 3D',
@@ -969,14 +1121,9 @@ function handleGenerate3D() {
                 _model: undefined 
             });
         }
-        // Ya no es necesario habilitar los botones aquí
     })();
 }
 
-/**
- * Edita el modelo 3D actual.
- * ¡MODIFICADO! Ahora es asíncrono y pasa el SVG original.
- */
 function handleEdit3D() {
     const item = svgGallery.find(i => i.id === currentSelectedId);
     const prompt = prompt3D.value;
@@ -995,30 +1142,33 @@ function handleEdit3D() {
         return;
     }
     
-    // --- NUEVO: Buscar el SVG 2D original ---
+    const originalSceneDescription = item.model3d.sceneDescription;
+    
+    if (!originalSceneDescription) {
+        showStatus("Error: Este modelo 3D es antiguo y no se puede editar.", true);
+        console.warn("El item 3D no tiene 'sceneDescription' y no puede ser editado.", item);
+        return;
+    }
+    
     const sourceSvgId = item.model3d.sourceSvgId;
     const sourceSvgItem = svgGallery.find(i => i.id === sourceSvgId);
     
-    if (!sourceSvgItem || !sourceSvgItem.svgContent) {
-        showStatus("Error: No se encontró el SVG 2D original para la edición. No se puede continuar.", true);
+    if (!sourceSvgItem || !sourceSvgItem.svgContent || sourceSvgItem.svgContent.startsWith('data:image/png')) {
+        showStatus("Error: No se encontró el SVG 2D original. No se puede editar.", true);
         return;
     }
     const sourceSvgContent = sourceSvgItem.svgContent;
-    // --- Fin de la búsqueda ---
 
-
-    generate3DButton.disabled = true; // Deshabilita temporalmente
+    generate3DButton.disabled = true;
     edit3DButton.disabled = true;
-    copy3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
-    download3DModelButton.disabled = true; // <-- AÑADIDO (Deshabilitar)
+    copy3DModelButton.disabled = true;
+    download3DModelButton.disabled = true;
     
     showStatus("Añadido a la cola de edición 3D...", false);
 
-    // Guardamos el estado anterior por si falla
     const originalName = item.name;
     const originalModelData = item.model3d;
 
-    // Actualizar el item existente a 'pending'
     updateGalleryItem(item.id, {
         name: item.name.replace(" (3D)", "") + " (Editando...)",
         status: 'pending'
@@ -1028,49 +1178,42 @@ function handleEdit3D() {
         clearPreview();
     }
 
-    // =================================================================
-    // ¡CORRECCIÓN! Habilitamos los botones DE NUEVO inmediatamente
-    // =================================================================
     generate3DButton.disabled = false;
     edit3DButton.disabled = false;
-    copy3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
-    download3DModelButton.disabled = false; // <-- AÑADIDO (Habilitar)
+    copy3DModelButton.disabled = false;
+    download3DModelButton.disabled = false;
 
-    // --- Iniciar tarea asíncrona ---
     (async () => {
         try {
-            const newModelData = await edit3DModel(
-                originalModelData.data, // Pasa los datos del modelo anterior
-                sourceSvgContent,     // ¡Pasa el SVG original!
-                prompt,               // El nuevo prompt
+            const newModelResult = await edit3DModel(
+                originalSceneDescription,
+                sourceSvgContent,
+                prompt,
                 selectedModel
             );
 
-            // Actualizar el item existente
             updateGalleryItem(item.id, {
                 name: originalName.replace(" (3D)", "") + " (3D Editado)",
                 status: 'completed',
                 model3d: {
-                    ...originalModelData, // Conserva sourceSvgId
-                    data: newModelData,
-                    prompt: prompt // Guardar el nuevo prompt
+                    ...originalModelData,
+                    data: newModelResult.gltfJson,
+                    sceneDescription: newModelResult.sceneDescription,
+                    prompt: prompt
                 }
             });
 
         } catch (error) {
             console.error("Error en handleEdit3D (background):", error);
             showStatus(`Error al editar 3D: ${error.message}`, true);
-            // Revertir a 'completed' con los datos originales
             updateGalleryItem(item.id, {
                 name: originalName,
                 status: 'completed',
                 model3d: originalModelData
             });
         }
-        // Ya no es necesario habilitar los botones aquí
     })();
 }
-
 
 // --- Inicialización ---
 
@@ -1083,8 +1226,9 @@ function main() {
     modelSelect = document.getElementById('modelSelect');
     promptInput = document.getElementById('promptInput');
     generateButton = document.getElementById('generateButton');
+    generateRealisticButton = document.getElementById('generateRealisticButton'); // <-- NUEVO
     copySvgButton = document.getElementById('copySvgButton');
-    downloadSvgButton = document.getElementById('donwloadSvgButton'); // <-- AÑADIDA ASIGNACIÓN (con el ID "donwload")
+    downloadSvgButton = document.getElementById('donwloadSvgButton');
     downloadGalleryButton = document.getElementById('downloadGalleryButton');
     uploadGalleryInput = document.getElementById('uploadGalleryInput');
     previewArea = document.getElementById('previewArea');
@@ -1103,8 +1247,8 @@ function main() {
     prompt3D = document.getElementById('prompt3D');
     generate3DButton = document.getElementById('generate3DButton');
     edit3DButton = document.getElementById('edit3DButton');
-    copy3DModelButton = document.getElementById('copy3DModelButton'); // <-- Asignación
-    download3DModelButton = document.getElementById('download3DModelButton'); // <-- AÑADIDA ASIGNACIÓN
+    copy3DModelButton = document.getElementById('copy3DModelButton');
+    download3DModelButton = document.getElementById('download3DModelButton');
 
     // Referencias del Modal
     improveModal = document.getElementById('improveModal');
@@ -1142,8 +1286,9 @@ function main() {
 
     // Botones principales
     generateButton.addEventListener('click', handleGenerate);
+    generateRealisticButton.addEventListener('click', handleGenerateRealistic); // <-- NUEVO
     copySvgButton.addEventListener('click', handleCopySvg);
-    downloadSvgButton.addEventListener('click', handleDownloadSvg); // <-- AÑADIDO EVENTO
+    downloadSvgButton.addEventListener('click', handleDownloadSvg);
     downloadGalleryButton.addEventListener('click', handleDownloadGallery);
     uploadGalleryInput.addEventListener('change', handleGalleryUpload);
     deleteShapeButton.addEventListener('click', handleDeleteShape); 
@@ -1151,8 +1296,8 @@ function main() {
     // --- NUEVOS EVENTOS 3D (MODIFICADOS) ---
     generate3DButton.addEventListener('click', handleGenerate3D);
     edit3DButton.addEventListener('click', handleEdit3D);
-    copy3DModelButton.addEventListener('click', handleCopy3DModel); // <-- Asignación de evento
-    download3DModelButton.addEventListener('click', handleDownload3DModel); // <-- AÑADIDO EVENTO
+    copy3DModelButton.addEventListener('click', handleCopy3DModel);
+    download3DModelButton.addEventListener('click', handleDownload3DModel);
 
     // Botones del Modal
     modalImproveCancel.addEventListener('click', () => {
@@ -1176,7 +1321,7 @@ function main() {
         const action = e.target.dataset.action;
         const itemIndex = svgGallery.findIndex(i => i.id === currentSelectedId);
     
-        if (itemIndex === -1 || !svgGallery[itemIndex].svgContent) return;
+        if (itemIndex === -1 || !svgGallery[itemIndex].svgContent || svgGallery[itemIndex].svgContent.startsWith('data:image/png')) return;
     
         const currentItem = svgGallery[itemIndex];
     
@@ -1187,8 +1332,6 @@ function main() {
         updateGalleryItem(currentSelectedId, { svgContent: newSvgContent });
     
         // 3. Refrescar la vista previa
-        // Es necesario recargar el SVG para que la librería de interacción
-        // capture el nuevo estado.
         showResultInPreview(svgGallery[itemIndex]);
     });
 }
